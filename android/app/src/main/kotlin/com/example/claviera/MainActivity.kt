@@ -29,6 +29,11 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/projects")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "directory") result.success(filesDir.absolutePath)
+                else result.notImplemented()
+            }
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/piano_preview")
         channel!!.setMethodCallHandler { call, result ->
                 when (call.method) {

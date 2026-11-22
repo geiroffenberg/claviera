@@ -49,15 +49,28 @@ class VoiceEvent {
 }
 
 class _Snapshot {
-  _Snapshot(this.events, this.measureCount, this.nextId);
+  _Snapshot(
+    this.events,
+    this.measureCount,
+    this.nextId,
+    this.beats,
+    this.unit,
+    this.key,
+  );
   final List<VoiceEvent> events;
   final int measureCount;
   final int nextId;
+  final int beats;
+  final int unit;
+  final int key;
 }
 
 class ScoreEditor {
   ScoreEditor(Score source)
     : _source = source,
+      _beats = source.beatsPerMeasure,
+      _unit = source.beatUnit,
+      _key = source.keySignature,
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
       for (final event in source.measures[measure].events) {
@@ -88,6 +101,10 @@ class ScoreEditor {
   }
 
   final Score _source;
+  int _beats;
+  int _unit;
+  int _key;
+  int get ticksPerMeasure => _beats * ticksPerQuarter * 4 ~/ _unit;
   List<VoiceEvent> _events = [];
   int _measureCount;
   int _nextId = 1;
@@ -116,8 +133,8 @@ class ScoreEditor {
     if (measure < 0 || measure >= _measureCount) {
       throw RangeError.range(measure, 0, _measureCount - 1, 'measure');
     }
-    final start = measure * _source.ticksPerMeasure;
-    final end = start + _source.ticksPerMeasure;
+    final start = measure * ticksPerMeasure;
+    final end = start + ticksPerMeasure;
     var cursor = start;
     for (final event in eventsFor(voice)) {
       if (event.start < end && event.end > start) {
@@ -127,11 +144,15 @@ class ScoreEditor {
     return cursor;
   }
 
-  _Snapshot _snapshot() => _Snapshot(List.of(_events), _measureCount, _nextId);
+  _Snapshot _snapshot() =>
+      _Snapshot(List.of(_events), _measureCount, _nextId, _beats, _unit, _key);
   void _restore(_Snapshot snapshot) {
     _events = List.of(snapshot.events);
     _measureCount = snapshot.measureCount;
     _nextId = snapshot.nextId;
+    _beats = snapshot.beats;
+    _unit = snapshot.unit;
+    _key = snapshot.key;
   }
 
   void _commit(void Function() change) {
@@ -159,10 +180,74 @@ class ScoreEditor {
     _restore(_redo.removeLast());
   }
 
+  void setScoreSettings({
+    required int beats,
+    required int unit,
+    required int key,
+  }) {
+    if (beats < 1 ||
+        beats > 32 ||
+        ![1, 2, 4, 8, 16].contains(unit) ||
+        key < -7 ||
+        key > 7) {
+      throw const EditException('Invalid score settings.');
+    }
+    if (beats == _beats && unit == _unit && key == _key) return;
+    final oldTicks = ticksPerMeasure;
+    final newTicks = beats * ticksPerQuarter * 4 ~/ unit;
+    final events = _events.where((event) => !event.generatedRest).toList();
+    if (newTicks != oldTicks) {
+      for (final event in events) {
+        final offset = event.start % oldTicks;
+        if (offset + event.duration > oldTicks) {
+          throw const EditException(
+            'Edit tied notes spanning barlines before changing the time signature.',
+          );
+        }
+        if (offset + event.duration > newTicks) {
+          throw const EditException(
+            'Existing notes or rests do not fit in the shorter bars. Edit them first.',
+          );
+        }
+      }
+    }
+    final updated = <VoiceEvent>[];
+    for (final event in events) {
+      final pitches = <Pitch>[];
+      for (final pitch in event.pitches) {
+        final midi = key == _key
+            ? pitch.midiNote
+            : soundingMidi(pitch.diatonicStep, pitch.accidental, key);
+        if (midi < 0 || midi > 127) {
+          throw const EditException(
+            'The key would put a note outside the MIDI range.',
+          );
+        }
+        pitches.add(
+          Pitch(
+            diatonicStep: pitch.diatonicStep,
+            midiNote: midi,
+            accidental: pitch.accidental,
+          ),
+        );
+      }
+      final start = newTicks == oldTicks
+          ? event.start
+          : event.start ~/ oldTicks * newTicks + event.start % oldTicks;
+      updated.add(event.copyWith(start: start, pitches: pitches));
+    }
+    _commit(() {
+      _beats = beats;
+      _unit = unit;
+      _key = key;
+      _events = updated;
+    });
+  }
+
   void _ensureMeasures(int end) {
     _measureCount = math.max(
       _measureCount,
-      (end + _source.ticksPerMeasure - 1) ~/ _source.ticksPerMeasure,
+      (end + ticksPerMeasure - 1) ~/ ticksPerMeasure,
     );
   }
 
@@ -179,8 +264,8 @@ class ScoreEditor {
     for (final voice in Voice.values) {
       final events = eventsFor(voice);
       for (var measure = 0; measure < _measureCount; measure++) {
-        final start = measure * _source.ticksPerMeasure;
-        final end = start + _source.ticksPerMeasure;
+        final start = measure * ticksPerMeasure;
+        final end = start + ticksPerMeasure;
         var cursor = start;
         for (final event in events) {
           if (event.end <= start || event.start >= end) continue;
@@ -210,7 +295,7 @@ class ScoreEditor {
       while (remaining > 0) {
         final available = math.min(
           remaining,
-          _source.ticksPerMeasure - position % _source.ticksPerMeasure,
+          ticksPerMeasure - position % ticksPerMeasure,
         );
         final part = _notationValues.firstWhere((value) => value <= available);
         _events.add(
@@ -383,8 +468,7 @@ class ScoreEditor {
         'Rests cannot be lengthened over another event.',
       );
     }
-    final eventBarEnd =
-        (event.start ~/ _source.ticksPerMeasure + 1) * _source.ticksPerMeasure;
+    final eventBarEnd = (event.start ~/ ticksPerMeasure + 1) * ticksPerMeasure;
     if (event.isRest &&
         duration < event.duration &&
         following.any((e) => e.start < eventBarEnd)) {
@@ -413,8 +497,7 @@ class ScoreEditor {
   void delete(int id, {int? pitchIndex}) {
     final event = eventById(id);
     if (event == null) throw const EditException('Select an event first.');
-    final barEnd =
-        (event.start ~/ _source.ticksPerMeasure + 1) * _source.ticksPerMeasure;
+    final barEnd = (event.start ~/ ticksPerMeasure + 1) * ticksPerMeasure;
     if (event.isRest &&
         eventsFor(
           event.voice,
@@ -442,15 +525,15 @@ class ScoreEditor {
       var position = event.start;
       var remaining = event.duration;
       while (remaining > 0) {
-        final measure = position ~/ _source.ticksPerMeasure;
+        final measure = position ~/ ticksPerMeasure;
         final available = math.min(
           remaining,
-          _source.ticksPerMeasure - position % _source.ticksPerMeasure,
+          ticksPerMeasure - position % ticksPerMeasure,
         );
         final part = values.firstWhere((value) => value <= available);
         measures[measure].add(
           NotationEvent(
-            startTick: position % _source.ticksPerMeasure,
+            startTick: position % ticksPerMeasure,
             durationTicks: part,
             voice: event.voice,
             staff: event.staff,
@@ -466,8 +549,9 @@ class ScoreEditor {
     }
     return Score(
       title: _source.title,
-      beatsPerMeasure: _source.beatsPerMeasure,
-      beatUnit: _source.beatUnit,
+      beatsPerMeasure: _beats,
+      beatUnit: _unit,
+      keySignature: _key,
       measures: [for (final events in measures) Measure(events: events)],
     );
   }

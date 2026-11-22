@@ -55,14 +55,27 @@ class ScorePainter extends CustomPainter {
   double get _trebleTop => 8 * _s;
   double get _bassTop => 20 * _s;
   double get _measureWidth => 28 * _s;
-  double get _startX => 13 * _s;
+  double get _startX => startFor(score, _s);
 
+  static double startFor(Score score, double s) =>
+      (13 + score.keySignature.abs() * .8) * s;
   static double widthFor(Score score, double s) =>
-      (13 + 28 * score.measures.length + 2) * s;
+      startFor(score, s) + (28 * score.measures.length + 2) * s;
   static double heightFor(double s) => 32 * s;
 
-  static double eventX(int measure, int tick, int ticksPerMeasure, double s) =>
-      (13 + measure * 28 + 3 + tick / ticksPerMeasure * 23) * s;
+  static double eventX(
+    int measure,
+    int tick,
+    int ticksPerMeasure,
+    double s, {
+    int keySignature = 0,
+  }) =>
+      (13 +
+          keySignature.abs() * .8 +
+          measure * 28 +
+          3 +
+          tick / ticksPerMeasure * 23) *
+      s;
 
   static Staff staffAt(double y, double s) =>
       y < 16 * s ? Staff.treble : Staff.bass;
@@ -160,13 +173,51 @@ class ScorePainter extends CustomPainter {
     ink.strokeWidth = 1;
     _glyph(canvas, '\uE050', 3 * _s, _trebleTop + 3 * _s);
     _glyph(canvas, '\uE062', 3 * _s, _bassTop + _s);
+    final signature = score.keySignature;
+    const sharpTreble = [0.0, 1.5, -.5, 1.0, 2.5, .5, 2.0];
+    const flatTreble = [2.0, .5, 2.5, 1.0, 3.0, 1.5, 3.5];
+    const sharpBass = [1.0, 2.5, .5, 2.0, 3.5, 1.5, 3.0];
+    const flatBass = [3.0, 1.5, 3.5, 2.0, 4.0, 2.5, 1.0];
+    for (var i = 0; i < signature.abs(); i++) {
+      final x = (7 + i * .8) * _s;
+      final glyph = signature > 0 ? '\uE262' : '\uE260';
+      _glyph(
+        canvas,
+        glyph,
+        x,
+        _trebleTop + (signature > 0 ? sharpTreble[i] : flatTreble[i]) * _s,
+      );
+      _glyph(
+        canvas,
+        glyph,
+        x,
+        _bassTop + (signature > 0 ? sharpBass[i] : flatBass[i]) * _s,
+      );
+    }
     for (final top in [_trebleTop, _bassTop]) {
-      _timeNumber(canvas, score.beatsPerMeasure, 8 * _s, top + 2 * _s);
-      _timeNumber(canvas, score.beatUnit, 8 * _s, top + 4 * _s);
+      final x = (8 + signature.abs() * .8) * _s;
+      _timeNumber(canvas, score.beatsPerMeasure, x, top + 2 * _s);
+      _timeNumber(canvas, score.beatUnit, x, top + 4 * _s);
     }
     for (var m = 0; m <= score.measures.length; m++) {
       final x = _startX + m * _measureWidth;
       canvas.drawLine(Offset(x, _trebleTop), Offset(x, _bassTop + 4 * _s), ink);
+      if (m < score.measures.length) {
+        final number = TextPainter(
+          text: TextSpan(
+            text: '${m + 1}',
+            style: TextStyle(
+              color: const Color(0xff333c39),
+              fontSize: 1.2 * _s,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        number.paint(
+          canvas,
+          Offset(x - number.width / 2, _trebleTop - 2.5 * _s),
+        );
+      }
     }
     for (var m = 0; m < score.measures.length; m++) {
       final groups = beamGroups(
@@ -192,13 +243,25 @@ class ScorePainter extends CustomPainter {
         }
       }
       for (final event in score.measures[m].events) {
-        final x = eventX(m, event.startTick, score.ticksPerMeasure, _s);
+        final x = eventX(
+          m,
+          event.startTick,
+          score.ticksPerMeasure,
+          _s,
+          keySignature: score.keySignature,
+        );
         _drawEvent(canvas, event, x, ink, beamY: beamed[event]);
         if (event.tieToNext) {
           final end = event.startTick + event.durationTicks;
           final nextX = end == score.ticksPerMeasure
               ? _startX + (m + 1) * _measureWidth - .3 * _s
-              : eventX(m, end, score.ticksPerMeasure, _s);
+              : eventX(
+                  m,
+                  end,
+                  score.ticksPerMeasure,
+                  _s,
+                  keySignature: score.keySignature,
+                );
           for (final pitch in event.pitches) {
             final y = _pitchY(pitch, event.staff) + 1.1 * _s;
             final path = Path()
@@ -239,7 +302,13 @@ class ScorePainter extends CustomPainter {
       final tick = cursorTick! % score.ticksPerMeasure;
       final x = measure >= score.measures.length
           ? _startX + score.measures.length * _measureWidth
-          : eventX(measure, tick, score.ticksPerMeasure, _s);
+          : eventX(
+              measure,
+              tick,
+              score.ticksPerMeasure,
+              _s,
+              keySignature: score.keySignature,
+            );
       canvas.drawLine(
         Offset(x, _trebleTop - 2 * _s),
         Offset(x, _bassTop + 6 * _s),
@@ -275,7 +344,13 @@ class ScorePainter extends CustomPainter {
     final xs = group
         .map(
           (event) =>
-              eventX(measure, event.startTick, score.ticksPerMeasure, _s) +
+              eventX(
+                measure,
+                event.startTick,
+                score.ticksPerMeasure,
+                _s,
+                keySignature: score.keySignature,
+              ) +
               (up ? 1.15 * _s : 0.0),
         )
         .toList();

@@ -52,7 +52,9 @@ class _ScoreViewportState extends State<ScoreViewport> {
         widget.selectedMeasure != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !horizontal.hasClients) return;
-        final x = (13 + widget.selectedMeasure! * 28) * 10.0;
+        final x =
+            ScorePainter.startFor(widget.score, 10) +
+            widget.selectedMeasure! * 280;
         final viewport = horizontal.position.viewportDimension;
         if (x < horizontal.offset || x + 280 > horizontal.offset + viewport) {
           horizontal.jumpTo(

@@ -7,6 +7,27 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
+/// Number of sharps (positive) or flats (negative), in standard order.
+int keyAlteration(int keySignature, int diatonicStep) {
+  const sharps = [3, 0, 4, 1, 5, 2, 6];
+  const flats = [6, 2, 5, 1, 4, 0, 3];
+  final order = keySignature >= 0 ? sharps : flats;
+  return order.take(keySignature.abs()).contains(diatonicStep % 7)
+      ? keySignature.sign
+      : 0;
+}
+
+int soundingMidi(int step, Accidental accidental, int keySignature) {
+  const semitones = [0, 2, 4, 5, 7, 9, 11];
+  final alteration = switch (accidental) {
+    Accidental.none => keyAlteration(keySignature, step),
+    Accidental.sharp => 1,
+    Accidental.flat => -1,
+    Accidental.natural => 0,
+  };
+  return 12 + step ~/ 7 * 12 + semitones[step % 7] + alteration;
+}
+
 enum NoteValue {
   whole(4 * ticksPerQuarter),
   half(2 * ticksPerQuarter),
@@ -78,7 +99,9 @@ class Score {
     required this.beatsPerMeasure,
     required this.beatUnit,
     required this.measures,
+    this.keySignature = 0,
   }) : assert(beatsPerMeasure > 0),
+       assert(keySignature >= -7 && keySignature <= 7),
        assert(
          beatUnit == 1 ||
              beatUnit == 2 ||
@@ -90,6 +113,7 @@ class Score {
   final String title;
   final int beatsPerMeasure;
   final int beatUnit;
+  final int keySignature;
   final List<Measure> measures;
 
   int get ticksPerMeasure => beatsPerMeasure * ticksPerQuarter * 4 ~/ beatUnit;

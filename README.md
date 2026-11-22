@@ -1,8 +1,8 @@
 # Claviera
 
 Claviera is an Android landscape-first piano score sketchpad. The current
-prototype opens a blank four-bar score in 4/4; changes are held in memory and
-lost when the app closes.
+prototype opens a blank four-bar score in 4/4. Projects can be saved on the
+device; unsaved changes are held in memory.
 
 ## Run
 
@@ -15,9 +15,20 @@ The app requests both landscape orientations at startup.
 - Select a voice, note/rest and duration on the rails. Scroll a rail if its
   controls don't fit on screen. Values run from whole through 64th; dots are
   available through the 32nd.
+- Tap the clefs or time signature at the beginning of the staff to open
+  **Score settings**. Choose the initial key signature and time signature for
+  the entire score. Key signatures change the sounding pitch of existing notes
+  without explicit accidentals as well as newly entered notes. Explicit
+  accidentals override the key on their individual note; accidental carry
+  through the rest of the bar is not yet implemented.
+- Changing the meter keeps each event in its existing bar. A shorter meter is
+  rejected if a note or explicit rest no longer fits. Meter changes are also
+  blocked while any note spans a barline; edit those ties first. Undo and Redo
+  include score settings.
 - Use the **Bar** arrows in the header to choose the bar to write in. The
   selected bar is shaded and the green cursor marks the next entry point for
-  the active voice in that bar. Changing bars does not modify the score.
+  the active voice in that bar. Each bar is numbered above its starting
+  barline. Changing bars does not modify the score.
 - In Write mode, touch and drag vertically to preview a pitch, then release to
   append it at the green cursor, regardless of horizontal touch position. In
   Rest mode, touch the staff to append a rest. Drag with two fingers to scroll
@@ -44,6 +55,13 @@ The app requests both landscape orientations at startup.
   rest. To add a chord pitch, select a note, switch to Write mode, enable Chord
   Stack, and enter a pitch. Switch Chord Stack off to append again.
 - Undo is on the right rail; Redo is in the menu.
+- The menu contains **New score**, **Open project**, **Save**, **Save as** and
+  **Rename**. The first save asks for a name; Save updates that project, while
+  Save as creates a separate copy. New and Open ask whether to save or discard
+  unsaved changes. Android Back also warns about unsaved changes. Project files
+  are stored privately by the app and can be removed when the app is
+  uninstalled or its data is cleared. Save manually; sudden process termination
+  or force-closing the app can lose unsaved changes.
 
 Each voice advances independently in each bar. Editing leaves later notes in
 place: gaps before later events **in the same bar** are filled with generated
@@ -78,6 +96,8 @@ lib/
   audio/
     piano_preview.dart         Android preview and playback controller
     score_playback.dart        Playback timing from logical voice events
+  storage/
+    projects.dart              Versioned local project storage
   notation/
     score_viewport.dart        Touch input and two-finger scrolling
     score_painter.dart         SMuFL grand-staff rendering
@@ -94,7 +114,7 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-Local JSON persistence, PDF/MusicXML/MIDI export, ads, and tempo, key and
+PDF/MusicXML/MIDI export, ads, and tempo, key, clef and
 time-signature changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
