@@ -166,7 +166,8 @@ void main() {
     var origin = tester.getTopLeft(canvas);
     await tester.tapAt(origin + const Offset(410, 60));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Key and time'));
+    expect(find.text('Bar 2 settings'), findsOneWidget);
+    await tester.tap(find.text('Key and time signature'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Change key at this bar'));
     await tester.pumpAndSettle();
@@ -198,5 +199,30 @@ void main() {
     await tester.pump();
     score = tester.widget<ScoreViewport>(find.byType(ScoreViewport)).score;
     expect(score.measures[1].events.single.pitches.single.midiNote, 66);
+  });
+
+  testWidgets('first bar offers initial key and time settings', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    final origin = tester.getTopLeft(canvas);
+    await tester.tapAt(origin + const Offset(130, 60));
+    await tester.pumpAndSettle();
+    expect(find.text('Bar 1 settings'), findsOneWidget);
+    expect(find.text('Tempo'), findsOneWidget);
+    await tester.tap(find.text('Key and time signature'));
+    await tester.pumpAndSettle();
+    expect(find.text('Score settings'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .expand((measure) => measure.events),
+      isEmpty,
+    );
   });
 }

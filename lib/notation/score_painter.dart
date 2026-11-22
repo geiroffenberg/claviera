@@ -56,9 +56,9 @@ class ScorePainter extends CustomPainter {
   double get _bassTop => 20 * _s;
 
   static double signatureSpace(Score score, int measure) {
-    if (measure == 0) return 0;
+    if (measure == 0) return score.measures[0].repeatStart ? 2 : 0;
     final bar = score.measures[measure];
-    var width = 0.0;
+    var width = bar.repeatStart ? 2.0 : 0.0;
     if (bar.keySignature != null) {
       final previous = score.keyAt(measure - 1);
       final next = score.keyAt(measure);
@@ -235,6 +235,45 @@ class ScorePainter extends CustomPainter {
     for (var m = 0; m <= score.measures.length; m++) {
       final x = barX(score, m, _s);
       canvas.drawLine(Offset(x, _trebleTop), Offset(x, _bassTop + 4 * _s), ink);
+      final startRepeat =
+          m < score.measures.length && score.measures[m].repeatStart;
+      final endRepeat = m > 0 && score.measures[m - 1].repeatEnd;
+      final repeatInk = Paint()..color = const Color(0xff333c39);
+      if (startRepeat || endRepeat) {
+        repeatInk.strokeWidth = 3;
+        if (startRepeat) {
+          canvas.drawLine(
+            Offset(x + .4 * _s, _trebleTop),
+            Offset(x + .4 * _s, _bassTop + 4 * _s),
+            repeatInk,
+          );
+        }
+        if (endRepeat) {
+          canvas.drawLine(
+            Offset(x - .4 * _s, _trebleTop),
+            Offset(x - .4 * _s, _bassTop + 4 * _s),
+            repeatInk,
+          );
+        }
+        for (final top in [_trebleTop, _bassTop]) {
+          for (final offset in [1.5, 2.5]) {
+            if (startRepeat) {
+              canvas.drawCircle(
+                Offset(x + 1.15 * _s, top + offset * _s),
+                .18 * _s,
+                repeatInk,
+              );
+            }
+            if (endRepeat) {
+              canvas.drawCircle(
+                Offset(x - 1.15 * _s, top + offset * _s),
+                .18 * _s,
+                repeatInk,
+              );
+            }
+          }
+        }
+      }
       if (m < score.measures.length) {
         final number = TextPainter(
           text: TextSpan(
@@ -270,7 +309,7 @@ class ScorePainter extends CustomPainter {
     for (var m = 0; m < score.measures.length; m++) {
       if (m > 0) {
         final bar = score.measures[m];
-        var x = barX(score, m, _s) + .5 * _s;
+        var x = barX(score, m, _s) + (bar.repeatStart ? 2.5 : .5) * _s;
         if (bar.keySignature != null) {
           final previous = score.keyAt(m - 1);
           final next = score.keyAt(m);

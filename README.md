@@ -45,13 +45,23 @@ The app requests both landscape orientations at startup.
   240 quarter notes per minute (default 120). Editing is disabled while
   playing, and playback stops at the last event or when the app is backgrounded.
   The speaker button mutes note-entry preview only, not score playback.
-- Tap a bar number to set or remove a tempo change at that bar. It applies
-  until the next tempo marking, including during tied notes. The header BPM is
-  the initial tempo. For later bars, choose **Key and time** in that dialog
-  to add or remove a key or time change. Each change applies from that bar
+- Tap a bar number to open **Bar settings**, then choose **Tempo** or
+  **Key and time signature**. Tempo changes apply until the next tempo
+  marking, including during tied notes; the header BPM is the initial tempo.
+  In the first bar, key and time opens the initial score settings. For later
+  bars, use the switches to add or remove changes. Each change applies from that bar
   until the next change of the same kind. Key changes affect existing notes
   that begin under the new key; a note tied across a key change retains the
   pitch from its start. Changes are saved with the project and can be undone.
+- Choose **Repeats** in Bar settings to add a start sign at the beginning or an
+  end sign at the end of that bar. An end sign plays the passage one additional
+  time, then continues; without an unmatched start sign it repeats from the
+  beginning. Each end sign repeats once, and separate consecutive repeats are
+  supported. Tempo on a jump returns to the tempo in effect at its destination.
+  Repeat signs are saved and support Undo and Redo.
+  Nested repeats are not yet supported; playback reports an error for nested
+  start signs. Playback also reports an error if a tied note crosses a repeat
+  jump or destination boundary; edit the tie before playing.
 - Switch to Edit mode and tap an event in the active voice, or use the
   left/right arrows to select one. Drag a selected note vertically to change
   its pitch. The up/down arrows select a pitch in a chord; accidentals and Delete

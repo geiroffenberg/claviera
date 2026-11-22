@@ -59,6 +59,8 @@ class _Snapshot {
     this.tempos,
     this.times,
     this.keys,
+    this.repeatStarts,
+    this.repeatEnds,
   );
   final List<VoiceEvent> events;
   final int measureCount;
@@ -69,6 +71,8 @@ class _Snapshot {
   final Map<int, int> tempos;
   final Map<int, TimeSignature> times;
   final Map<int, int> keys;
+  final Set<int> repeatStarts;
+  final Set<int> repeatEnds;
 }
 
 class ScoreEditor {
@@ -90,6 +94,14 @@ class ScoreEditor {
         for (var i = 0; i < source.measures.length; i++)
           if (source.measures[i].keySignature != null)
             i: source.measures[i].keySignature!,
+      },
+      _repeatStarts = {
+        for (var i = 0; i < source.measures.length; i++)
+          if (source.measures[i].repeatStart) i,
+      },
+      _repeatEnds = {
+        for (var i = 0; i < source.measures.length; i++)
+          if (source.measures[i].repeatEnd) i,
       },
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
@@ -127,6 +139,10 @@ class ScoreEditor {
   Map<int, int> _tempos;
   Map<int, TimeSignature> _times;
   Map<int, int> _keys;
+  Set<int> _repeatStarts;
+  Set<int> _repeatEnds;
+  Set<int> get repeatStarts => Set.unmodifiable(_repeatStarts);
+  Set<int> get repeatEnds => Set.unmodifiable(_repeatEnds);
   Map<int, int> get tempoChanges => Map.unmodifiable(_tempos);
   Map<int, TimeSignature> get timeChanges => Map.unmodifiable(_times);
   Map<int, int> get keyChanges => Map.unmodifiable(_keys);
@@ -218,6 +234,8 @@ class ScoreEditor {
     Map.of(_tempos),
     Map.of(_times),
     Map.of(_keys),
+    Set.of(_repeatStarts),
+    Set.of(_repeatEnds),
   );
   void _restore(_Snapshot snapshot) {
     _events = List.of(snapshot.events);
@@ -229,6 +247,8 @@ class ScoreEditor {
     _tempos = Map.of(snapshot.tempos);
     _times = Map.of(snapshot.times);
     _keys = Map.of(snapshot.keys);
+    _repeatStarts = Set.of(snapshot.repeatStarts);
+    _repeatEnds = Set.of(snapshot.repeatEnds);
   }
 
   void _commit(void Function() change) {
@@ -268,6 +288,32 @@ class ScoreEditor {
         _tempos.remove(measure);
       } else {
         _tempos[measure] = bpm;
+      }
+    });
+  }
+
+  void setMeasureRepeats(
+    int measure, {
+    required bool start,
+    required bool end,
+  }) {
+    if (measure < 0 || measure >= _measureCount) {
+      throw const EditException('Invalid bar.');
+    }
+    if (_repeatStarts.contains(measure) == start &&
+        _repeatEnds.contains(measure) == end) {
+      return;
+    }
+    _commit(() {
+      if (start) {
+        _repeatStarts.add(measure);
+      } else {
+        _repeatStarts.remove(measure);
+      }
+      if (end) {
+        _repeatEnds.add(measure);
+      } else {
+        _repeatEnds.remove(measure);
       }
     });
   }
@@ -714,6 +760,8 @@ class ScoreEditor {
             tempo: _tempos[i],
             timeSignature: _times[i],
             keySignature: _keys[i],
+            repeatStart: _repeatStarts.contains(i),
+            repeatEnd: _repeatEnds.contains(i),
           ),
       ],
     );

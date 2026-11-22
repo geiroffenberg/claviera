@@ -110,12 +110,16 @@ class Measure {
     this.tempo,
     this.timeSignature,
     this.keySignature,
+    this.repeatStart = false,
+    this.repeatEnd = false,
   });
 
   final List<NotationEvent> events;
   final int? tempo;
   final TimeSignature? timeSignature;
   final int? keySignature;
+  final bool repeatStart;
+  final bool repeatEnd;
 }
 
 class Score {

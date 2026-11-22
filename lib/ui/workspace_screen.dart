@@ -556,6 +556,100 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     if (mounted && value != null) setState(() => tempo = value);
   }
 
+  Future<void> _barSettings(int measure) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Bar ${measure + 1} settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.speed),
+              title: const Text('Tempo'),
+              onTap: () => Navigator.pop(context, 'tempo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_note),
+              title: const Text('Key and time signature'),
+              onTap: () => Navigator.pop(context, 'signatures'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('Repeats'),
+              onTap: () => Navigator.pop(context, 'repeats'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'tempo') {
+      await _setBarTempo(measure);
+    } else if (choice == 'signatures') {
+      await _scoreSettings(measure: measure == 0 ? null : measure);
+    } else if (choice == 'repeats') {
+      await _setBarRepeats(measure);
+    }
+  }
+
+  Future<void> _setBarRepeats(int measure) async {
+    var start = editor.repeatStarts.contains(measure);
+    var end = editor.repeatEnds.contains(measure);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('Bar ${measure + 1} repeats'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  title: const Text('Start repeat'),
+                  subtitle: const Text('At the beginning of this bar'),
+                  value: start,
+                  onChanged: (value) => update(() => start = value),
+                ),
+                SwitchListTile(
+                  title: const Text('End repeat'),
+                  subtitle: const Text('At the end of this bar'),
+                  value: end,
+                  onChanged: (value) => update(() => end = value),
+                ),
+                const Text(
+                  'Repeat once; without a start sign, repeat from the beginning.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                _perform(
+                  () =>
+                      editor.setMeasureRepeats(measure, start: start, end: end),
+                );
+                Navigator.pop(context);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _setBarTempo(int measure) async {
     final changes = editor.tempoChanges;
     var effective = tempo;
@@ -581,14 +675,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
             ),
           ),
           actions: [
-            if (measure > 0)
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _scoreSettings(measure: measure);
-                },
-                child: const Text('Key and time'),
-              ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
@@ -799,7 +885,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       final measure = tempoGesture!;
       final isTap = (position - gestureStart!).distance < 15;
       _cancelGesture();
-      if (isTap) _setBarTempo(measure);
+      if (isTap) _barSettings(measure);
       return;
     }
     if (settingsGesture) {

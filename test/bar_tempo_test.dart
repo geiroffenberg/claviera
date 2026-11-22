@@ -62,7 +62,7 @@ void main() {
     );
   });
 
-  testWidgets('bar number opens tempo dialog without writing a note', (
+  testWidgets('bar settings opens tempo without writing a note', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
@@ -72,6 +72,9 @@ void main() {
       find.byKey(const ValueKey('score-canvas')),
     );
     await tester.tapAt(origin + const Offset(410, 60));
+    await tester.pumpAndSettle();
+    expect(find.text('Bar 2 settings'), findsOneWidget);
+    await tester.tap(find.text('Tempo'));
     await tester.pumpAndSettle();
     expect(find.text('Bar 2 tempo'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField), '90');
@@ -83,6 +86,8 @@ void main() {
     expect(score.measures[1].tempo, 90);
     expect(score.measures.expand((m) => m.events), isEmpty);
     await tester.tapAt(origin + const Offset(410, 60));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tempo'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove change'));
     await tester.pumpAndSettle();

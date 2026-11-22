@@ -24,8 +24,11 @@ class ProjectCodec {
     final score = project.editor.score;
     return jsonEncode({
       'version':
-          project.editor.timeChanges.isNotEmpty ||
-              project.editor.keyChanges.isNotEmpty
+          project.editor.repeatStarts.isNotEmpty ||
+              project.editor.repeatEnds.isNotEmpty
+          ? 4
+          : project.editor.timeChanges.isNotEmpty ||
+                project.editor.keyChanges.isNotEmpty
           ? 3
           : project.editor.tempoChanges.isEmpty
           ? 1
@@ -36,6 +39,10 @@ class ProjectCodec {
       'unit': score.beatUnit,
       'key': score.keySignature,
       'measureCount': project.editor.measureCount,
+      if (project.editor.repeatStarts.isNotEmpty)
+        'repeatStarts': project.editor.repeatStarts.toList()..sort(),
+      if (project.editor.repeatEnds.isNotEmpty)
+        'repeatEnds': project.editor.repeatEnds.toList()..sort(),
       if (project.editor.tempoChanges.isNotEmpty)
         'tempoChanges': [
           for (final entry
@@ -103,7 +110,10 @@ class ProjectCodec {
       throw FormatException('Invalid $field.');
     }
 
-    if (raw['version'] != 1 && raw['version'] != 2 && raw['version'] != 3) {
+    if (raw['version'] != 1 &&
+        raw['version'] != 2 &&
+        raw['version'] != 3 &&
+        raw['version'] != 4) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -120,7 +130,8 @@ class ProjectCodec {
     final count = number(raw, 'measureCount', 1, 100000);
     final tempos = <int, int>{};
     if (raw['version'] == 2 ||
-        (raw['version'] == 3 && raw.containsKey('tempoChanges'))) {
+        ((raw['version'] == 3 || raw['version'] == 4) &&
+            raw.containsKey('tempoChanges'))) {
       final changes = raw['tempoChanges'];
       if (changes is! List) {
         throw const FormatException('Invalid tempo changes.');
@@ -138,7 +149,7 @@ class ProjectCodec {
     }
     final times = <int, TimeSignature>{};
     final keys = <int, int>{};
-    if (raw['version'] == 3) {
+    if (raw['version'] == 3 || raw['version'] == 4) {
       for (final field in ['timeChanges', 'keyChanges']) {
         final changes = raw[field];
         if (changes == null) continue;
@@ -167,6 +178,21 @@ class ProjectCodec {
         }
       }
     }
+    Set<int> repeatMarks(String field) {
+      final values = raw[field];
+      if (values == null) return {};
+      if (values is! List) throw FormatException('Invalid $field.');
+      final marks = <int>{};
+      for (final value in values) {
+        if (value is! int || value < 0 || value >= count || !marks.add(value)) {
+          throw FormatException('Invalid $field.');
+        }
+      }
+      return marks;
+    }
+
+    final starts = raw['version'] == 4 ? repeatMarks('repeatStarts') : <int>{};
+    final ends = raw['version'] == 4 ? repeatMarks('repeatEnds') : <int>{};
     final layout = Score(
       title: name,
       beatsPerMeasure: beats,
@@ -233,6 +259,8 @@ class ProjectCodec {
             tempo: tempos[i],
             timeSignature: times[i],
             keySignature: keys[i],
+            repeatStart: starts.contains(i),
+            repeatEnd: ends.contains(i),
           ),
       ],
     );
