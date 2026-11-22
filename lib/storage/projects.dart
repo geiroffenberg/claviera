@@ -23,13 +23,44 @@ class ProjectCodec {
   static String encode(Project project) {
     final score = project.editor.score;
     return jsonEncode({
-      'version': 1,
+      'version':
+          project.editor.timeChanges.isNotEmpty ||
+              project.editor.keyChanges.isNotEmpty
+          ? 3
+          : project.editor.tempoChanges.isEmpty
+          ? 1
+          : 2,
       'name': project.name,
       'tempo': project.tempo,
       'beats': score.beatsPerMeasure,
       'unit': score.beatUnit,
       'key': score.keySignature,
       'measureCount': project.editor.measureCount,
+      if (project.editor.tempoChanges.isNotEmpty)
+        'tempoChanges': [
+          for (final entry
+              in (project.editor.tempoChanges.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'measure': entry.key, 'bpm': entry.value},
+        ],
+      if (project.editor.timeChanges.isNotEmpty)
+        'timeChanges': [
+          for (final entry
+              in (project.editor.timeChanges.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {
+              'measure': entry.key,
+              'beats': entry.value.beats,
+              'unit': entry.value.unit,
+            },
+        ],
+      if (project.editor.keyChanges.isNotEmpty)
+        'keyChanges': [
+          for (final entry
+              in (project.editor.keyChanges.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'measure': entry.key, 'key': entry.value},
+        ],
       'events': [
         for (final voice in Voice.values)
           for (final event in project.editor.eventsFor(voice))
@@ -72,7 +103,7 @@ class ProjectCodec {
       throw FormatException('Invalid $field.');
     }
 
-    if (raw['version'] != 1) {
+    if (raw['version'] != 1 && raw['version'] != 2 && raw['version'] != 3) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -87,7 +118,66 @@ class ProjectCodec {
     }
     final key = number(raw, 'key', -7, 7);
     final count = number(raw, 'measureCount', 1, 100000);
-    final ticks = beats * ticksPerQuarter * 4 ~/ unit;
+    final tempos = <int, int>{};
+    if (raw['version'] == 2 ||
+        (raw['version'] == 3 && raw.containsKey('tempoChanges'))) {
+      final changes = raw['tempoChanges'];
+      if (changes is! List) {
+        throw const FormatException('Invalid tempo changes.');
+      }
+      for (final change in changes) {
+        if (change is! Map<String, dynamic>) {
+          throw const FormatException('Invalid tempo change.');
+        }
+        final measure = number(change, 'measure', 0, count - 1);
+        if (tempos.containsKey(measure)) {
+          throw const FormatException('Duplicate tempo change.');
+        }
+        tempos[measure] = number(change, 'bpm', 30, 240);
+      }
+    }
+    final times = <int, TimeSignature>{};
+    final keys = <int, int>{};
+    if (raw['version'] == 3) {
+      for (final field in ['timeChanges', 'keyChanges']) {
+        final changes = raw[field];
+        if (changes == null) continue;
+        if (changes is! List) throw FormatException('Invalid $field.');
+        for (final change in changes) {
+          if (change is! Map<String, dynamic>) {
+            throw FormatException('Invalid $field.');
+          }
+          final measure = number(change, 'measure', 1, count - 1);
+          if (field == 'timeChanges') {
+            if (times.containsKey(measure)) {
+              throw const FormatException('Duplicate time change.');
+            }
+            final b = number(change, 'beats', 1, 32);
+            final u = number(change, 'unit', 1, 16);
+            if (![1, 2, 4, 8, 16].contains(u)) {
+              throw const FormatException('Invalid beat unit.');
+            }
+            times[measure] = TimeSignature(b, u);
+          } else {
+            if (keys.containsKey(measure)) {
+              throw const FormatException('Duplicate key change.');
+            }
+            keys[measure] = number(change, 'key', -7, 7);
+          }
+        }
+      }
+    }
+    final layout = Score(
+      title: name,
+      beatsPerMeasure: beats,
+      beatUnit: unit,
+      keySignature: key,
+      measures: [
+        for (var i = 0; i < count; i++)
+          Measure(timeSignature: times[i], keySignature: keys[i]),
+      ],
+    );
+    final totalTicks = layout.measureStart(count);
     final events = raw['events'];
     if (events is! List) throw const FormatException('Invalid events.');
     final measures = List.generate(count, (_) => <NotationEvent>[]);
@@ -95,8 +185,8 @@ class ProjectCodec {
       if (item is! Map<String, dynamic>) {
         throw const FormatException('Invalid event.');
       }
-      final start = number(item, 'start', 0, count * ticks - 1);
-      final duration = number(item, 'duration', 60, count * ticks - start);
+      final start = number(item, 'start', 0, totalTicks - 1);
+      final duration = number(item, 'duration', 60, totalTicks - start);
       if (start % 60 != 0 || duration % 60 != 0) {
         throw const FormatException('Invalid event timing.');
       }
@@ -120,9 +210,10 @@ class ProjectCodec {
           Pitch(diatonicStep: step, midiNote: midi, accidental: accidental),
         );
       }
-      measures[start ~/ ticks].add(
+      final measure = layout.measureAtTick(start);
+      measures[measure].add(
         NotationEvent(
-          startTick: start % ticks,
+          startTick: start - layout.measureStart(measure),
           durationTicks: duration,
           voice: voice,
           staff: staff,
@@ -135,7 +226,15 @@ class ProjectCodec {
       beatsPerMeasure: beats,
       beatUnit: unit,
       keySignature: key,
-      measures: [for (final events in measures) Measure(events: events)],
+      measures: [
+        for (var i = 0; i < measures.length; i++)
+          Measure(
+            events: measures[i],
+            tempo: tempos[i],
+            timeSignature: times[i],
+            keySignature: keys[i],
+          ),
+      ],
     );
     try {
       return Project(name: name, tempo: tempo, editor: ScoreEditor(score));

@@ -7,6 +7,23 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
+class TimeSignature {
+  const TimeSignature(this.beats, this.unit)
+    : assert(beats > 0),
+      assert(unit == 1 || unit == 2 || unit == 4 || unit == 8 || unit == 16);
+
+  final int beats;
+  final int unit;
+
+  int get ticks => beats * ticksPerQuarter * 4 ~/ unit;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TimeSignature && other.beats == beats && other.unit == unit;
+  @override
+  int get hashCode => Object.hash(beats, unit);
+}
+
 /// Number of sharps (positive) or flats (negative), in standard order.
 int keyAlteration(int keySignature, int diatonicStep) {
   const sharps = [3, 0, 4, 1, 5, 2, 6];
@@ -88,9 +105,17 @@ class NotationEvent {
 }
 
 class Measure {
-  const Measure({this.events = const []});
+  const Measure({
+    this.events = const [],
+    this.tempo,
+    this.timeSignature,
+    this.keySignature,
+  });
 
   final List<NotationEvent> events;
+  final int? tempo;
+  final TimeSignature? timeSignature;
+  final int? keySignature;
 }
 
 class Score {
@@ -117,4 +142,42 @@ class Score {
   final List<Measure> measures;
 
   int get ticksPerMeasure => beatsPerMeasure * ticksPerQuarter * 4 ~/ beatUnit;
+
+  TimeSignature timeAt(int measure) {
+    var time = TimeSignature(beatsPerMeasure, beatUnit);
+    for (var i = 0; i <= measure && i < measures.length; i++) {
+      time = measures[i].timeSignature ?? time;
+    }
+    return time;
+  }
+
+  int keyAt(int measure) {
+    var key = keySignature;
+    for (var i = 0; i <= measure && i < measures.length; i++) {
+      key = measures[i].keySignature ?? key;
+    }
+    return key;
+  }
+
+  int measureStart(int measure) {
+    var start = 0;
+    var time = TimeSignature(beatsPerMeasure, beatUnit);
+    for (var i = 0; i < measure; i++) {
+      if (i < measures.length) time = measures[i].timeSignature ?? time;
+      start += time.ticks;
+    }
+    return start;
+  }
+
+  int measureAtTick(int tick) {
+    if (tick < 0) throw RangeError.value(tick, 'tick');
+    var start = 0;
+    var time = TimeSignature(beatsPerMeasure, beatUnit);
+    for (var i = 0; i < measures.length; i++) {
+      time = measures[i].timeSignature ?? time;
+      if (tick < start + time.ticks) return i;
+      start += time.ticks;
+    }
+    return measures.length + (tick - start) ~/ time.ticks;
+  }
 }

@@ -19,7 +19,24 @@ class PlaybackPlan {
     if (bpm < 30 || bpm > 240) {
       throw ArgumentError.value(bpm, 'bpm', 'Must be between 30 and 240.');
     }
-    int millis(int tick) => (tick * 60000 / (bpm * ticksPerQuarter)).round();
+    final changes = editor.tempoChanges.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    int millis(int tick) {
+      var previous = 0;
+      var currentBpm = bpm;
+      var elapsed = 0.0;
+      for (final change in changes) {
+        final at = editor.measureStart(change.key);
+        if (at >= tick) break;
+        elapsed += (at - previous) * 60000 / (currentBpm * ticksPerQuarter);
+        currentBpm = change.value;
+        previous = at;
+      }
+      return (elapsed +
+              (tick - previous) * 60000 / (currentBpm * ticksPerQuarter))
+          .round();
+    }
+
     for (final voice in Voice.values) {
       for (final event in editor.eventsFor(voice)) {
         final end = millis(event.end);

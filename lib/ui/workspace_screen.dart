@@ -46,6 +46,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Staff? previewStaff;
   Offset? gestureStart;
   bool settingsGesture = false;
+  int? tempoGesture;
   bool playing = false;
   bool saving = false;
   int playbackRevision = 0;
@@ -53,6 +54,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   VoiceEvent? get selected => editor.eventById(selectedId);
   int get duration => noteValue.duration(dotted: dotted);
+  int get entryMeasure {
+    final event = selected;
+    if (event != null &&
+        ((replaceSelectedRest && event.isRest) ||
+            (chordStack && !event.isRest) ||
+            mode == WorkspaceMode.edit)) {
+      return editor.measureAtTick(event.start);
+    }
+    return editor.measureAtTick(
+      editor.nextTick(voice, measure: selectedMeasure),
+    );
+  }
+
   Project get project =>
       Project(name: projectName, tempo: tempo, editor: editor);
   bool get dirty => ProjectCodec.encode(project) != savedState;
@@ -313,7 +327,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     final midi = soundingMidi(
       pitch.diatonicStep,
       accidental,
-      editor.score.keySignature,
+      editor.keyAt(entryMeasure),
     );
     if (midi >= 0 && midi <= 127) {
       piano.play(midi);
@@ -322,12 +336,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
   }
 
-  Future<void> _scoreSettings() async {
+  Future<void> _scoreSettings({int? measure}) async {
     piano.stop();
     final score = editor.score;
-    var beats = score.beatsPerMeasure;
-    var unit = score.beatUnit;
-    var key = score.keySignature;
+    final time = measure == null
+        ? TimeSignature(score.beatsPerMeasure, score.beatUnit)
+        : editor.timeAt(measure);
+    var beats = time.beats;
+    var unit = time.unit;
+    var key = measure == null ? score.keySignature : editor.keyAt(measure);
+    var explicitTime =
+        measure != null && editor.timeChanges.containsKey(measure);
+    var explicitKey = measure != null && editor.keyChanges.containsKey(measure);
     String? error;
     const keys = [
       'C♭ major / A♭ minor (7 flats)',
@@ -350,12 +370,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: const Text('Score settings'),
+          title: Text(
+            measure == null
+                ? 'Score settings'
+                : 'Bar ${measure + 1} key and time',
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (measure != null)
+                  SwitchListTile(
+                    title: const Text('Change key at this bar'),
+                    value: explicitKey,
+                    onChanged: (value) => update(() => explicitKey = value),
+                  ),
                 DropdownButtonFormField<int>(
                   key: const ValueKey('score-key-signature'),
                   initialValue: key,
@@ -365,8 +395,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                     for (var i = 0; i < keys.length; i++)
                       DropdownMenuItem(value: i - 7, child: Text(keys[i])),
                   ],
-                  onChanged: (value) => update(() => key = value!),
+                  onChanged: measure != null && !explicitKey
+                      ? null
+                      : (value) => update(() => key = value!),
                 ),
+                if (measure != null)
+                  SwitchListTile(
+                    title: const Text('Change time at this bar'),
+                    value: explicitTime,
+                    onChanged: (value) => update(() => explicitTime = value),
+                  ),
                 Row(
                   children: [
                     Expanded(
@@ -380,7 +418,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           for (var i = 1; i <= 32; i++)
                             DropdownMenuItem(value: i, child: Text('$i')),
                         ],
-                        onChanged: (value) => update(() => beats = value!),
+                        onChanged: measure != null && !explicitTime
+                            ? null
+                            : (value) => update(() => beats = value!),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -395,7 +435,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           for (final i in [1, 2, 4, 8, 16])
                             DropdownMenuItem(value: i, child: Text('$i')),
                         ],
-                        onChanged: (value) => update(() => unit = value!),
+                        onChanged: measure != null && !explicitTime
+                            ? null
+                            : (value) => update(() => unit = value!),
                       ),
                     ),
                   ],
@@ -421,7 +463,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
             TextButton(
               onPressed: () {
                 try {
-                  editor.setScoreSettings(beats: beats, unit: unit, key: key);
+                  if (measure == null) {
+                    editor.setScoreSettings(beats: beats, unit: unit, key: key);
+                  } else {
+                    editor.setMeasureSignatures(
+                      measure,
+                      time: explicitTime ? TimeSignature(beats, unit) : null,
+                      key: explicitKey ? key : null,
+                    );
+                  }
                   setState(() {});
                   Navigator.pop(context);
                 } on EditException catch (exception) {
@@ -506,6 +556,69 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     if (mounted && value != null) setState(() => tempo = value);
   }
 
+  Future<void> _setBarTempo(int measure) async {
+    final changes = editor.tempoChanges;
+    var effective = tempo;
+    for (final entry
+        in (changes.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))) {
+      if (entry.key > measure) break;
+      effective = entry.value;
+    }
+    var input = '${changes[measure] ?? effective}';
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('Bar ${measure + 1} tempo'),
+          content: TextFormField(
+            initialValue: input,
+            keyboardType: TextInputType.number,
+            onChanged: (value) => input = value,
+            decoration: InputDecoration(
+              labelText: 'Quarter notes per minute (30–240)',
+              errorText: error,
+            ),
+          ),
+          actions: [
+            if (measure > 0)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _scoreSettings(measure: measure);
+                },
+                child: const Text('Key and time'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            if (changes.containsKey(measure))
+              TextButton(
+                onPressed: () {
+                  _perform(() => editor.setMeasureTempo(measure, null));
+                  Navigator.pop(context);
+                },
+                child: const Text('Remove change'),
+              ),
+            TextButton(
+              onPressed: () {
+                final bpm = int.tryParse(input);
+                if (bpm == null || bpm < 30 || bpm > 240) {
+                  update(() => error = 'Enter a tempo between 30 and 240.');
+                  return;
+                }
+                _perform(() => editor.setMeasureTempo(measure, bpm));
+                Navigator.pop(context);
+              },
+              child: const Text('Set'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _perform(void Function() operation) {
     try {
       setState(operation);
@@ -523,7 +636,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     if (measure != null) {
       selectedMeasure = measure;
     } else if (event != null) {
-      selectedMeasure = event.start ~/ editor.ticksPerMeasure;
+      selectedMeasure = editor.measureAtTick(event.start);
     }
     replaceSelectedRest = event?.isRest ?? false;
     if (event != null) {
@@ -581,13 +694,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       for (final event in score.measures[m].events.where(
         (e) => e.voice == voice,
       )) {
-        final x = ScorePainter.eventX(
-          m,
-          event.startTick,
-          score.ticksPerMeasure,
-          10,
-          keySignature: score.keySignature,
-        );
+        final x = ScorePainter.eventXFor(score, m, event.startTick, 10);
         final ys = event.isRest
             ? [(event.staff == Staff.treble ? 10 : 22) * 10.0]
             : event.pitches.map(
@@ -619,6 +726,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   void _startGesture(Offset position, Score score) {
     gestureStart = position;
+    if (position.dy >= 45 && position.dy <= 75) {
+      for (var index = 0; index < score.measures.length; index++) {
+        if ((position.dx - ScorePainter.barX(score, index, 10)).abs() <= 20) {
+          tempoGesture = index;
+          return;
+        }
+      }
+    }
     settingsGesture = position.dx < ScorePainter.startFor(score, 10);
     if (settingsGesture) return;
     if (mode == WorkspaceMode.edit) {
@@ -628,9 +743,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         _select(
           hit.eventId,
           pitch: event == null ? 0 : _nearestPitch(event, position.dy),
-          measure: ((position.dx - ScorePainter.startFor(score, 10)) / 280)
-              .floor()
-              .clamp(0, score.measures.length - 1),
+          measure: score.measures.indexWhere((m) => m.events.contains(hit)),
         );
       } else {
         _select(null);
@@ -647,7 +760,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   void _updateGesture(Offset position) {
-    if (gestureStart == null || settingsGesture) return;
+    if (gestureStart == null || settingsGesture || tempoGesture != null) return;
     if (mode == WorkspaceMode.write && !rest && previewStaff != null) {
       setState(() {
         if (!(chordStack && selected != null && !selected!.isRest)) {
@@ -675,12 +788,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     piano.stop();
     gestureStart = null;
     settingsGesture = false;
+    tempoGesture = null;
     preview = null;
     previewStaff = null;
   });
 
   void _endGesture(Offset position) {
     if (gestureStart == null) return;
+    if (tempoGesture != null) {
+      final measure = tempoGesture!;
+      final isTap = (position - gestureStart!).distance < 15;
+      _cancelGesture();
+      if (isTap) _setBarTempo(measure);
+      return;
+    }
     if (settingsGesture) {
       final isTap = (position - gestureStart!).distance < 15;
       _cancelGesture();
@@ -697,7 +818,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         final midi = soundingMidi(
           pitch.diatonicStep,
           accidental,
-          editor.score.keySignature,
+          editor.keyAt(editor.measureAtTick(selected!.start)),
         );
         if (midi < 0 || midi > 127) {
           _perform(
@@ -725,7 +846,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       final midi = soundingMidi(
         pitch.diatonicStep,
         pitch.accidental,
-        editor.score.keySignature,
+        editor.keyAt(entryMeasure),
       );
       if (!rest && (midi < 0 || midi > 127)) {
         throw const EditException('That pitch is outside the MIDI range.');
@@ -768,8 +889,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           pitch: rest ? null : writtenPitch,
           measure: selectedMeasure,
         );
-        selectedMeasure =
-            (editor.eventById(selectedId)!.end - 1) ~/ editor.ticksPerMeasure;
+        selectedMeasure = editor.measureAtTick(
+          editor.eventById(selectedId)!.end - 1,
+        );
         replaceSelectedRest = false;
         pitchIndex = 0;
       }

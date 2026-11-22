@@ -16,15 +16,15 @@ The app requests both landscape orientations at startup.
   controls don't fit on screen. Values run from whole through 64th; dots are
   available through the 32nd.
 - Tap the clefs or time signature at the beginning of the staff to open
-  **Score settings**. Choose the initial key signature and time signature for
-  the entire score. Key signatures change the sounding pitch of existing notes
+  **Score settings**. Choose the initial key signature and time signature.
+  Key signatures change the sounding pitch of existing notes
   without explicit accidentals as well as newly entered notes. Explicit
   accidentals override the key on their individual note; accidental carry
   through the rest of the bar is not yet implemented.
 - Changing the meter keeps each event in its existing bar. A shorter meter is
-  rejected if a note or explicit rest no longer fits. Meter changes are also
-  blocked while any note spans a barline; edit those ties first. Undo and Redo
-  include score settings.
+  rejected if a note or explicit rest no longer fits. A meter change is also
+  blocked if it changes the length of a bar crossed by an existing tied note;
+  edit that tie first. Undo and Redo include score settings.
 - Use the **Bar** arrows in the header to choose the bar to write in. The
   selected bar is shaded and the green cursor marks the next entry point for
   the active voice in that bar. Each bar is numbered above its starting
@@ -45,6 +45,13 @@ The app requests both landscape orientations at startup.
   240 quarter notes per minute (default 120). Editing is disabled while
   playing, and playback stops at the last event or when the app is backgrounded.
   The speaker button mutes note-entry preview only, not score playback.
+- Tap a bar number to set or remove a tempo change at that bar. It applies
+  until the next tempo marking, including during tied notes. The header BPM is
+  the initial tempo. For later bars, choose **Key and time** in that dialog
+  to add or remove a key or time change. Each change applies from that bar
+  until the next change of the same kind. Key changes affect existing notes
+  that begin under the new key; a note tied across a key change retains the
+  pitch from its start. Changes are saved with the project and can be undone.
 - Switch to Edit mode and tap an event in the active voice, or use the
   left/right arrows to select one. Drag a selected note vertically to change
   its pitch. The up/down arrows select a pitch in a chord; accidentals and Delete
@@ -73,14 +80,13 @@ cannot overlap a later note.
 Notes crossing a barline are one logical event shown as tied segments; editing
 or deleting a tied note (or a pitch in its chord) affects the entire tied
 event, including its continuation in the next bar. Measures are added as
-needed. Bar selection is independent of the future barline signature controls.
+needed.
 
 V1 and V3 use up-stems; V2 and V4 use down-stems on both staves. Consecutive
 eighth notes and shorter notes in the same voice, staff and beat are beamed,
 with additional beams or beamlets for shorter values. Rests, gaps, staff
 changes, beats and barlines break groups. Compound eighth-note meters such as
-6/8 use dotted-quarter beats; manual beam overrides and per-bar time
-signatures are not yet available.
+6/8 use dotted-quarter beats; manual beam overrides are not yet available.
 
 ## Structure and limitations
 
@@ -114,8 +120,7 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-PDF/MusicXML/MIDI export, ads, and tempo, key, clef and
-time-signature changes per bar are not implemented. The remaining disabled menu
+PDF/MusicXML/MIDI export, ads, and clef changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
 
@@ -125,5 +130,5 @@ derived from the Versilian Community Sample Library. See the accompanying
 Samples are at most three seconds long, so longer held notes decay or end before
 their notated duration. SoundPool timing and pitch-shifted samples are
 provisional; playback supports at most 64 simultaneous notes and does not yet
-provide a playhead or per-bar tempo changes. The sample engine supports MIDI
+provide a playhead. The sample engine supports MIDI
 notes 10–127.
