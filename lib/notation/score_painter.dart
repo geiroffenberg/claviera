@@ -38,6 +38,7 @@ class ScorePainter extends CustomPainter {
     this.previewDuration = 960,
     this.previewVoice = Voice.v1,
     this.staffSpace = 10,
+    this.measureNumberOffset = 0,
   });
 
   final Score score;
@@ -50,6 +51,7 @@ class ScorePainter extends CustomPainter {
   final int previewDuration;
   final Voice previewVoice;
   final double staffSpace;
+  final int measureNumberOffset;
 
   double get _s => staffSpace;
   double get _trebleTop => 8 * _s;
@@ -277,7 +279,7 @@ class ScorePainter extends CustomPainter {
       if (m < score.measures.length) {
         final number = TextPainter(
           text: TextSpan(
-            text: '${m + 1}',
+            text: '${m + 1 + measureNumberOffset}',
             style: TextStyle(
               color: const Color(0xff333c39),
               fontSize: 1.2 * _s,
@@ -614,5 +616,6 @@ class ScorePainter extends CustomPainter {
       previewStaff != oldDelegate.previewStaff ||
       previewDuration != oldDelegate.previewDuration ||
       previewVoice != oldDelegate.previewVoice ||
+      measureNumberOffset != oldDelegate.measureNumberOffset ||
       staffSpace != oldDelegate.staffSpace;
 }

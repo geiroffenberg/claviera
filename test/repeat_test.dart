@@ -176,7 +176,7 @@ void main() {
   testWidgets('bar settings can add and remove repeat signs on a phone', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(900, 400));
+    await tester.binding.setSurfaceSize(const Size(900, 320));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const ClavieraApp());
     final canvas = find.byKey(const ValueKey('score-canvas'));
@@ -209,5 +209,35 @@ void main() {
         .measures[1];
     expect(bar.repeatStart, false);
     expect(bar.repeatEnd, false);
+  });
+
+  testWidgets('all bar settings choices are tappable on a short screen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    Future<void> open() async {
+      await tester.tapAt(tester.getTopLeft(canvas) + const Offset(410, 60));
+      await tester.pumpAndSettle();
+    }
+
+    await open();
+    await tester.tap(find.text('Tempo'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bar 2 tempo'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await open();
+    await tester.tap(find.text('Key and time signature'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bar 2 key and time'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await open();
+    await tester.tap(find.text('Repeats'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bar 2 repeats'), findsOneWidget);
   });
 }

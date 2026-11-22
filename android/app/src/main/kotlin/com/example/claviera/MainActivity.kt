@@ -2,6 +2,12 @@ package com.example.claviera
 
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.app.Activity
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.Rect
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -26,6 +32,9 @@ class MainActivity : FlutterActivity() {
     private val scheduledPlayback = mutableListOf<Runnable>()
     private val playbackStreams = mutableSetOf<Int>()
     private var channel: MethodChannel? = null
+    private var pdfResult: MethodChannel.Result? = null
+    private var pdfPages: List<ByteArray>? = null
+    private val pdfRequest = 7463
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -33,6 +42,34 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 if (call.method == "directory") result.success(filesDir.absolutePath)
                 else result.notImplemented()
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/pdf")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "save") {
+                    result.notImplemented()
+                } else if (pdfResult != null) {
+                    result.error("busy", "A PDF export is already in progress.", null)
+                } else {
+                    val pages = call.argument<List<ByteArray>>("pages")
+                    val name = call.argument<String>("name")
+                    if (pages.isNullOrEmpty() || name.isNullOrBlank()) {
+                        result.error("invalid_pdf", "PDF pages and a name are required.", null)
+                    } else {
+                        pdfPages = pages
+                        pdfResult = result
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("application/pdf")
+                            .putExtra(Intent.EXTRA_TITLE, name)
+                        try {
+                            startActivityForResult(intent, pdfRequest)
+                        } catch (error: android.content.ActivityNotFoundException) {
+                            pdfPages = null
+                            pdfResult = null
+                            result.error("unavailable", "No app is available to save the PDF.", null)
+                        }
+                    }
+                }
             }
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/piano_preview")
         channel!!.setMethodCallHandler { call, result ->
@@ -45,6 +82,7 @@ class MainActivity : FlutterActivity() {
                         } else {
                             play(note, result)
                         }
+
                     }
                     "stop" -> {
                         stopAfterMinimumDuration()
@@ -74,6 +112,49 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    @Deprecated("Android activity result callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != pdfRequest) return
+        val response = pdfResult ?: return
+        val pages = pdfPages
+        pdfResult = null
+        pdfPages = null
+        if (resultCode != Activity.RESULT_OK) {
+            response.success(false)
+            return
+        }
+        val uri: Uri? = data?.data
+        if (uri == null || pages == null) {
+            response.error("save_failed", "The PDF destination is unavailable.", null)
+            return
+        }
+        val document = PdfDocument()
+        try {
+            for ((index, bytes) in pages.withIndex()) {
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    ?: throw IOException("Could not decode PDF page ${index + 1}.")
+                try {
+                    val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, index + 1).create())
+                    page.canvas.drawBitmap(bitmap, null, Rect(0, 0, 595, 842), null)
+                    document.finishPage(page)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw IOException("Could not open the selected destination.")
+            output.use { document.writeTo(it) }
+            response.success(true)
+        } catch (error: IOException) {
+            response.error("save_failed", "Could not save PDF: ${error.message}", null)
+        } catch (error: SecurityException) {
+            response.error("save_failed", "Cannot access PDF destination: ${error.message}", null)
+        } finally {
+            document.close()
+        }
     }
 
     private fun initialize(result: MethodChannel.Result) {

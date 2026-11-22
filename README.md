@@ -72,6 +72,10 @@ The app requests both landscape orientations at startup.
   rest. To add a chord pitch, select a note, switch to Write mode, enable Chord
   Stack, and enter a pitch. Switch Chord Stack off to append again.
 - Undo is on the right rail; Redo is in the menu.
+- Choose **Export PDF** in the menu, then select a destination in Android's
+  file picker. The score is arranged into systems on A4 portrait pages.
+  PDF pages are rendered as images; dense passages may need manual review
+  before printing. PDF is for sharing/printing, not reopening for editing.
 - The menu contains **New score**, **Open project**, **Save**, **Save as** and
   **Rename**. The first save asks for a name; Save updates that project, while
   Save as creates a separate copy. New and Open ask whether to save or discard
@@ -117,6 +121,7 @@ lib/
   notation/
     score_viewport.dart        Touch input and two-finger scrolling
     score_painter.dart         SMuFL grand-staff rendering
+    print_layout.dart          Paginated score rendering for PDF export
     beaming.dart               Voice stem directions and rhythmic beam grouping
   ui/
     workspace_screen.dart      Rails and editing interactions
@@ -130,7 +135,7 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-PDF/MusicXML/MIDI export, ads, and clef changes per bar are not implemented. The remaining disabled menu
+MusicXML/MIDI export, ads, and clef changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
 

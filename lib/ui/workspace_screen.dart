@@ -9,6 +9,7 @@ import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
 import '../models/score.dart';
 import '../notation/score_painter.dart';
+import '../notation/print_layout.dart';
 import '../notation/score_viewport.dart';
 import '../storage/projects.dart';
 import 'workspace_menu.dart';
@@ -49,6 +50,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   int? tempoGesture;
   bool playing = false;
   bool saving = false;
+  bool exportingPdf = false;
   int playbackRevision = 0;
   int tempo = 120;
 
@@ -70,6 +72,35 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Project get project =>
       Project(name: projectName, tempo: tempo, editor: editor);
   bool get dirty => ProjectCodec.encode(project) != savedState;
+
+  Future<void> _exportPdf() async {
+    if (exportingPdf) return;
+    setState(() => exportingPdf = true);
+    try {
+      final pages = await PrintLayout.render(
+        editor.score,
+        projectName,
+        initialTempo: tempo,
+      );
+      final safeName = projectName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final saved = await const MethodChannel(
+        'claviera/pdf',
+      ).invokeMethod<bool>('save', {'name': '$safeName.pdf', 'pages': pages});
+      if (mounted && saved == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('PDF saved.')));
+      }
+    } on PlatformException catch (error) {
+      _storageError(error.message ?? error.code);
+    } on MissingPluginException {
+      _storageError('PDF export is available on Android only.');
+    } on StateError catch (error) {
+      _storageError(error.message);
+    } finally {
+      if (mounted) setState(() => exportingPdf = false);
+    }
+  }
 
   @override
   void initState() {
@@ -561,25 +592,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Bar ${measure + 1} settings'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.speed),
-              title: const Text('Tempo'),
-              onTap: () => Navigator.pop(context, 'tempo'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.music_note),
-              title: const Text('Key and time signature'),
-              onTap: () => Navigator.pop(context, 'signatures'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.repeat),
-              title: const Text('Repeats'),
-              onTap: () => Navigator.pop(context, 'repeats'),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.speed),
+                label: const Text('Tempo'),
+                onPressed: () => Navigator.pop(context, 'tempo'),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.music_note),
+                label: const Text('Key and time signature'),
+                onPressed: () => Navigator.pop(context, 'signatures'),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.repeat),
+                label: const Text('Repeats'),
+                onPressed: () => Navigator.pop(context, 'repeats'),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1073,7 +1107,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         }
       },
       child: IgnorePointer(
-        ignoring: saving,
+        ignoring: saving || exportingPdf,
         child: Scaffold(
           body: SafeArea(
             child: Column(
@@ -1346,6 +1380,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onSave: _saveProject,
                               onSaveAs: () => _saveProject(saveAs: true),
                               onRename: () => _saveProject(rename: true),
+                              onExportPdf: _exportPdf,
                               onRedo: () => setState(() {
                                 editor.redo();
                                 selectedMeasure = selectedMeasure.clamp(
