@@ -23,6 +23,17 @@ The app requests both landscape orientations at startup.
   Rest mode, touch the staff to append a rest. Drag with two fingers to scroll
   the score. An entry cannot overlap a later note or an explicit rest; a note
   crossing a barline may consume generated rests in the next bar.
+  Dragging between the treble and bass staves switches the note to that staff;
+  chord stack keeps the selected chord's staff.
+- On Android, the piano preview plays the pitch while entering or dragging a
+  note. Use the speaker button in the header to mute it. It is an experimental
+  single-note preview; device latency may vary.
+- Press **Play** to play the whole score from the beginning, or **Stop** to
+  stop immediately. Playback includes all voices and chord pitches; empty space
+  and rests are silent. Tap the BPM value to set a score-wide tempo from 30 to
+  240 quarter notes per minute (default 120). Editing is disabled while
+  playing, and playback stops at the last event or when the app is backgrounded.
+  The speaker button mutes note-entry preview only, not score playback.
 - Switch to Edit mode and tap an event in the active voice, or use the
   left/right arrows to select one. Drag a selected note vertically to change
   its pitch. The up/down arrows select a pitch in a chord; accidentals and Delete
@@ -64,6 +75,9 @@ lib/
     demo_score.dart            Sample events
   editor/
     score_editor.dart          Voice timelines, rest handling and undo/redo
+  audio/
+    piano_preview.dart         Android preview and playback controller
+    score_playback.dart        Playback timing from logical voice events
   notation/
     score_viewport.dart        Touch input and two-finger scrolling
     score_painter.dart         SMuFL grand-staff rendering
@@ -72,6 +86,7 @@ lib/
     workspace_screen.dart      Rails and editing interactions
     workspace_menu.dart        Redo and future actions
 assets/fonts/                  Bravura font and its SIL OFL license
+android/app/src/main/assets/piano/  CC0 piano samples and provenance
 ```
 
 Timing uses 960 ticks per quarter. Logical events use absolute ticks in the
@@ -79,7 +94,16 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-Local JSON persistence, PDF/MusicXML/MIDI export, audio, ads, and tempo, key and
+Local JSON persistence, PDF/MusicXML/MIDI export, ads, and tempo, key and
 time-signature changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
+
+The Android preview and experimental playback use SoundPool and a small set of CC0 Steinway B samples
+derived from the Versilian Community Sample Library. See the accompanying
+`android/app/src/main/assets/piano/README.txt` for sources and processing.
+Samples are at most three seconds long, so longer held notes decay or end before
+their notated duration. SoundPool timing and pitch-shifted samples are
+provisional; playback supports at most 64 simultaneous notes and does not yet
+provide a playhead or per-bar tempo changes. The sample engine supports MIDI
+notes 10–127.

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../audio/piano_preview.dart';
+import '../audio/score_playback.dart';
 import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
 import '../models/score.dart';
@@ -10,13 +12,17 @@ import 'workspace_menu.dart';
 enum WorkspaceMode { write, edit }
 
 class WorkspaceScreen extends StatefulWidget {
-  const WorkspaceScreen({super.key});
+  const WorkspaceScreen({super.key, this.pianoPreview});
+
+  final PianoPreview? pianoPreview;
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
 }
 
-class _WorkspaceScreenState extends State<WorkspaceScreen> {
+class _WorkspaceScreenState extends State<WorkspaceScreen>
+    with WidgetsBindingObserver {
   final editor = ScoreEditor(blankScore);
+  late final PianoPreview piano;
   Voice voice = Voice.v1;
   NoteValue noteValue = NoteValue.quarter;
   WorkspaceMode mode = WorkspaceMode.write;
@@ -30,9 +36,136 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Pitch? preview;
   Staff? previewStaff;
   Offset? gestureStart;
+  bool playing = false;
+  int playbackRevision = 0;
+  int tempo = 120;
 
   VoiceEvent? get selected => editor.eventById(selectedId);
   int get duration => noteValue.duration(dotted: dotted);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    piano =
+        widget.pianoPreview ??
+        PianoPreview(
+          onError: (message) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(message)));
+          },
+        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) piano.warmUp();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      piano.stop();
+      if (playing) {
+        piano.stopScore();
+        setState(() {
+          playbackRevision++;
+          playing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    piano.dispose();
+    super.dispose();
+  }
+
+  void _previewPitch(Pitch pitch, {Accidental accidental = Accidental.none}) {
+    final alteration = accidental == Accidental.sharp
+        ? 1
+        : accidental == Accidental.flat
+        ? -1
+        : 0;
+    final midi = pitch.midiNote + alteration;
+    if (midi >= 0 && midi <= 127) {
+      piano.play(midi);
+    } else {
+      piano.stop();
+    }
+  }
+
+  Future<void> _playScore() async {
+    try {
+      final plan = PlaybackPlan(editor, tempo);
+      piano.stop();
+      final revision = ++playbackRevision;
+      setState(() => playing = true);
+      final started = await piano.playScore(
+        plan,
+        onFinished: () {
+          if (mounted && revision == playbackRevision) {
+            setState(() => playing = false);
+          }
+        },
+      );
+      if (!started && mounted && revision == playbackRevision) {
+        setState(() => playing = false);
+      }
+    } on StateError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  void _stopScore() {
+    playbackRevision++;
+    piano.stopScore();
+    setState(() => playing = false);
+  }
+
+  Future<void> _setTempo() async {
+    var input = '$tempo';
+    final value = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tempo (quarter notes per minute)'),
+        content: TextFormField(
+          initialValue: input,
+          onChanged: (value) => input = value,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'BPM (30–240)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final bpm = int.tryParse(input);
+              if (bpm == null || bpm < 30 || bpm > 240) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enter a tempo between 30 and 240 BPM.'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context, bpm);
+            },
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    if (mounted && value != null) setState(() => tempo = value);
+  }
 
   void _perform(void Function() operation) {
     try {
@@ -72,6 +205,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   });
 
   void _selectMeasure(int measure) => setState(() {
+    piano.stop();
     selectedMeasure = measure;
     selectedId = null;
     pitchIndex = 0;
@@ -80,6 +214,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   });
 
   void _selectVoice(Voice value) => setState(() {
+    piano.stop();
     voice = value;
     selectedId = null;
     replaceSelectedRest = false;
@@ -166,15 +301,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       setState(
         () => preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10),
       );
+      _previewPitch(preview!);
     }
   }
 
   void _updateGesture(Offset position) {
     if (gestureStart == null) return;
     if (mode == WorkspaceMode.write && !rest && previewStaff != null) {
-      setState(
-        () => preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10),
-      );
+      setState(() {
+        if (!(chordStack && selected != null && !selected!.isRest)) {
+          previewStaff = ScorePainter.staffAt(position.dy, 10);
+        }
+        preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10);
+      });
+      _previewPitch(preview!);
     } else if (mode == WorkspaceMode.edit &&
         selected != null &&
         !selected!.isRest &&
@@ -183,10 +323,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       setState(
         () => preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10),
       );
+      _previewPitch(
+        preview!,
+        accidental: selected!.pitches[pitchIndex].accidental,
+      );
     }
   }
 
   void _cancelGesture() => setState(() {
+    piano.stop();
     gestureStart = null;
     preview = null;
     previewStaff = null;
@@ -355,44 +500,50 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _rail(64, [
-                    _button(
-                      rest ? 'Rest' : 'Note',
-                      rest ? Icons.hotel : Icons.music_note,
-                      () => setState(() => rest = !rest),
-                      selected: rest,
-                    ),
-                    for (final value in NoteValue.values)
-                      _durationButton(value),
-                    _button(
-                      'Dot',
-                      Icons.circle,
-                      noteValue == NoteValue.sixtyFourth
-                          ? null
-                          : () => _changeDuration(noteValue, !dotted),
-                      selected: dotted,
-                    ),
-                    const Divider(),
-                    _button(
-                      mode == WorkspaceMode.write ? 'Write mode' : 'Edit mode',
-                      mode == WorkspaceMode.write
-                          ? Icons.edit
-                          : Icons.touch_app,
-                      () => setState(() {
-                        mode = mode == WorkspaceMode.write
-                            ? WorkspaceMode.edit
-                            : WorkspaceMode.write;
-                        preview = null;
-                      }),
-                      selected: mode == WorkspaceMode.edit,
-                    ),
-                    _button(
-                      'Chord stack',
-                      Icons.library_add,
-                      () => setState(() => chordStack = !chordStack),
-                      selected: chordStack,
-                    ),
-                  ]),
+                  IgnorePointer(
+                    ignoring: playing,
+                    child: _rail(64, [
+                      _button(
+                        rest ? 'Rest' : 'Note',
+                        rest ? Icons.hotel : Icons.music_note,
+                        () => setState(() => rest = !rest),
+                        selected: rest,
+                      ),
+                      for (final value in NoteValue.values)
+                        _durationButton(value),
+                      _button(
+                        'Dot',
+                        Icons.circle,
+                        noteValue == NoteValue.sixtyFourth
+                            ? null
+                            : () => _changeDuration(noteValue, !dotted),
+                        selected: dotted,
+                      ),
+                      const Divider(),
+                      _button(
+                        mode == WorkspaceMode.write
+                            ? 'Write mode'
+                            : 'Edit mode',
+                        mode == WorkspaceMode.write
+                            ? Icons.edit
+                            : Icons.touch_app,
+                        () => setState(() {
+                          piano.stop();
+                          mode = mode == WorkspaceMode.write
+                              ? WorkspaceMode.edit
+                              : WorkspaceMode.write;
+                          preview = null;
+                        }),
+                        selected: mode == WorkspaceMode.edit,
+                      ),
+                      _button(
+                        'Chord stack',
+                        Icons.library_add,
+                        () => setState(() => chordStack = !chordStack),
+                        selected: chordStack,
+                      ),
+                    ]),
+                  ),
                   Expanded(
                     child: Column(
                       children: [
@@ -400,169 +551,215 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           height: 40,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           color: const Color(0xffedf1ed),
-                          child: Row(
-                            children: [
-                              const Text(
-                                'CLAVIERA',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.4,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) => Row(
+                              children: [
+                                if (constraints.maxWidth >= 450) ...[
+                                  const Text(
+                                    'CLAVIERA',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.4,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    score.title,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  score.title,
-                                  overflow: TextOverflow.ellipsis,
+                                IconButton(
+                                  tooltip: playing
+                                      ? 'Stop playback'
+                                      : 'Play score',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    playing ? Icons.stop : Icons.play_arrow,
+                                  ),
+                                  onPressed: playing ? _stopScore : _playScore,
                                 ),
-                              ),
-                              IconButton(
-                                tooltip: 'Previous bar',
-                                visualDensity: VisualDensity.compact,
-                                icon: const Icon(Icons.chevron_left),
-                                onPressed: selectedMeasure > 0
-                                    ? () => _selectMeasure(selectedMeasure - 1)
-                                    : null,
-                              ),
-                              Text('Bar ${selectedMeasure + 1}'),
-                              IconButton(
-                                tooltip: 'Next bar',
-                                visualDensity: VisualDensity.compact,
-                                icon: const Icon(Icons.chevron_right),
-                                onPressed:
-                                    selectedMeasure + 1 < score.measures.length
-                                    ? () => _selectMeasure(selectedMeasure + 1)
-                                    : null,
-                              ),
-                              Text(
-                                mode == WorkspaceMode.write
-                                    ? 'WRITE · 2 FINGERS TO SCROLL'
-                                    : 'EDIT · TAP TO SELECT',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
+                                TextButton(
+                                  onPressed: playing ? null : _setTempo,
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: const Size(55, 36),
+                                  ),
+                                  child: Text('$tempo BPM'),
                                 ),
-                              ),
-                            ],
+                                IconButton(
+                                  tooltip: piano.enabled
+                                      ? 'Mute piano preview'
+                                      : 'Enable piano preview',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    piano.enabled
+                                        ? Icons.volume_up
+                                        : Icons.volume_off,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => piano.setEnabled(!piano.enabled),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Previous bar',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.chevron_left),
+                                  onPressed: selectedMeasure > 0
+                                      ? () =>
+                                            _selectMeasure(selectedMeasure - 1)
+                                      : null,
+                                ),
+                                Text('Bar ${selectedMeasure + 1}'),
+                                IconButton(
+                                  tooltip: 'Next bar',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.chevron_right),
+                                  onPressed:
+                                      selectedMeasure + 1 <
+                                          score.measures.length
+                                      ? () =>
+                                            _selectMeasure(selectedMeasure + 1)
+                                      : null,
+                                ),
+                                if (constraints.maxWidth >= 800)
+                                  Text(
+                                    mode == WorkspaceMode.write
+                                        ? 'WRITE · 2 FINGERS TO SCROLL'
+                                        : 'EDIT · TAP TO SELECT',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                         Expanded(
-                          child: ScoreViewport(
-                            score: score,
-                            selectedEvent: renderedSelection,
-                            selectedPitch: pitchIndex,
-                            selectedMeasure: selectedMeasure,
-                            cursorTick: cursor,
-                            previewPitch: preview,
-                            previewStaff: previewStaff,
-                            previewDuration: duration,
-                            previewVoice: voice,
-                            onStart: (position) =>
-                                _startGesture(position, score),
-                            onUpdate: _updateGesture,
-                            onEnd: _endGesture,
-                            onCancel: _cancelGesture,
+                          child: IgnorePointer(
+                            ignoring: playing,
+                            child: ScoreViewport(
+                              score: score,
+                              selectedEvent: renderedSelection,
+                              selectedPitch: pitchIndex,
+                              selectedMeasure: selectedMeasure,
+                              cursorTick: cursor,
+                              previewPitch: preview,
+                              previewStaff: previewStaff,
+                              previewDuration: duration,
+                              previewVoice: voice,
+                              onStart: (position) =>
+                                  _startGesture(position, score),
+                              onUpdate: _updateGesture,
+                              onEnd: _endGesture,
+                              onCancel: _cancelGesture,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  _rail(68, [
-                    for (final value in Voice.values)
-                      _textButton(
-                        value.name.toUpperCase(),
-                        'Voice ${value.index + 1}',
-                        () => _selectVoice(value),
-                        selected: voice == value,
+                  IgnorePointer(
+                    ignoring: playing,
+                    child: _rail(68, [
+                      for (final value in Voice.values)
+                        _textButton(
+                          value.name.toUpperCase(),
+                          'Voice ${value.index + 1}',
+                          () => _selectVoice(value),
+                          selected: voice == value,
+                        ),
+                      const Divider(),
+                      _button(
+                        'Previous event',
+                        Icons.chevron_left,
+                        index > 0 ? () => _select(events[index - 1].id) : null,
                       ),
-                    const Divider(),
-                    _button(
-                      'Previous event',
-                      Icons.chevron_left,
-                      index > 0 ? () => _select(events[index - 1].id) : null,
-                    ),
-                    _button(
-                      'Next event',
-                      Icons.chevron_right,
-                      events.isNotEmpty && index + 1 < events.length
-                          ? () => _select(events[index + 1].id)
-                          : null,
-                    ),
-                    _button(
-                      'Higher chord note',
-                      Icons.keyboard_arrow_up,
-                      above == null
-                          ? null
-                          : () => setState(() => pitchIndex = above),
-                    ),
-                    _button(
-                      'Lower chord note',
-                      Icons.keyboard_arrow_down,
-                      below == null
-                          ? null
-                          : () => setState(() => pitchIndex = below),
-                    ),
-                    const Divider(),
-                    for (final item in [
-                      (Accidental.sharp, '♯'),
-                      (Accidental.flat, '♭'),
-                      (Accidental.natural, '♮'),
-                    ])
-                      _textButton(
-                        item.$2,
-                        '${item.$2} accidental',
-                        mode == WorkspaceMode.edit &&
-                                event != null &&
-                                !event.isRest
-                            ? () => _accidental(item.$1)
+                      _button(
+                        'Next event',
+                        Icons.chevron_right,
+                        events.isNotEmpty && index + 1 < events.length
+                            ? () => _select(events[index + 1].id)
                             : null,
                       ),
-                    _button(
-                      'Undo',
-                      Icons.undo,
-                      editor.canUndo
-                          ? () => setState(() {
-                              editor.undo();
-                              selectedMeasure = selectedMeasure.clamp(
-                                0,
-                                editor.measureCount - 1,
-                              );
-                              selectedId = null;
-                              pitchIndex = 0;
-                            })
-                          : null,
-                    ),
-                    _button(
-                      'Delete',
-                      Icons.delete_outline,
-                      mode == WorkspaceMode.edit && event != null
-                          ? () => _perform(() {
-                              editor.delete(event.id, pitchIndex: pitchIndex);
-                              pitchIndex = 0;
-                              if (editor.eventById(event.id) == null) {
-                                selectedId = null;
-                              }
-                            })
-                          : null,
-                    ),
-                    _button(
-                      'Menu',
-                      Icons.menu,
-                      () => showWorkspaceMenu(
-                        context,
-                        canRedo: editor.canRedo,
-                        onRedo: () => setState(() {
-                          editor.redo();
-                          selectedMeasure = selectedMeasure.clamp(
-                            0,
-                            editor.measureCount - 1,
-                          );
-                          selectedId = null;
-                          pitchIndex = 0;
-                        }),
+                      _button(
+                        'Higher chord note',
+                        Icons.keyboard_arrow_up,
+                        above == null
+                            ? null
+                            : () => setState(() => pitchIndex = above),
                       ),
-                    ),
-                  ]),
+                      _button(
+                        'Lower chord note',
+                        Icons.keyboard_arrow_down,
+                        below == null
+                            ? null
+                            : () => setState(() => pitchIndex = below),
+                      ),
+                      const Divider(),
+                      for (final item in [
+                        (Accidental.sharp, '♯'),
+                        (Accidental.flat, '♭'),
+                        (Accidental.natural, '♮'),
+                      ])
+                        _textButton(
+                          item.$2,
+                          '${item.$2} accidental',
+                          mode == WorkspaceMode.edit &&
+                                  event != null &&
+                                  !event.isRest
+                              ? () => _accidental(item.$1)
+                              : null,
+                        ),
+                      _button(
+                        'Undo',
+                        Icons.undo,
+                        editor.canUndo
+                            ? () => setState(() {
+                                editor.undo();
+                                selectedMeasure = selectedMeasure.clamp(
+                                  0,
+                                  editor.measureCount - 1,
+                                );
+                                selectedId = null;
+                                pitchIndex = 0;
+                              })
+                            : null,
+                      ),
+                      _button(
+                        'Delete',
+                        Icons.delete_outline,
+                        mode == WorkspaceMode.edit && event != null
+                            ? () => _perform(() {
+                                editor.delete(event.id, pitchIndex: pitchIndex);
+                                pitchIndex = 0;
+                                if (editor.eventById(event.id) == null) {
+                                  selectedId = null;
+                                }
+                              })
+                            : null,
+                      ),
+                      _button(
+                        'Menu',
+                        Icons.menu,
+                        () => showWorkspaceMenu(
+                          context,
+                          canRedo: editor.canRedo,
+                          onRedo: () => setState(() {
+                            editor.redo();
+                            selectedMeasure = selectedMeasure.clamp(
+                              0,
+                              editor.measureCount - 1,
+                            );
+                            selectedId = null;
+                            pitchIndex = 0;
+                          }),
+                        ),
+                      ),
+                    ]),
+                  ),
                 ],
               ),
             ),
