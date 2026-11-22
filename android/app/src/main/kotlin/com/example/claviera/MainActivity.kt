@@ -35,6 +35,9 @@ class MainActivity : FlutterActivity() {
     private var pdfResult: MethodChannel.Result? = null
     private var pdfPages: List<ByteArray>? = null
     private val pdfRequest = 7463
+    private val midiRequest = 7464
+    private var midiResult: MethodChannel.Result? = null
+    private var midiBytes: ByteArray? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -67,6 +70,34 @@ class MainActivity : FlutterActivity() {
                             pdfPages = null
                             pdfResult = null
                             result.error("unavailable", "No app is available to save the PDF.", null)
+                        }
+                    }
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/midi")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "save") {
+                    result.notImplemented()
+                } else if (midiResult != null) {
+                    result.error("busy", "A MIDI export is already in progress.", null)
+                } else {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val name = call.argument<String>("name")
+                    if (bytes == null || bytes.isEmpty() || name.isNullOrBlank()) {
+                        result.error("invalid_midi", "MIDI data and a name are required.", null)
+                    } else {
+                        midiBytes = bytes
+                        midiResult = result
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("audio/midi")
+                            .putExtra(Intent.EXTRA_TITLE, name)
+                        try {
+                            startActivityForResult(intent, midiRequest)
+                        } catch (error: android.content.ActivityNotFoundException) {
+                            midiBytes = null
+                            midiResult = null
+                            result.error("unavailable", "No app is available to save the MIDI file.", null)
                         }
                     }
                 }
@@ -117,6 +148,32 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Android activity result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == midiRequest) {
+            val response = midiResult ?: return
+            val bytes = midiBytes
+            midiResult = null
+            midiBytes = null
+            if (resultCode != Activity.RESULT_OK) {
+                response.success(false)
+                return
+            }
+            val uri = data?.data
+            if (uri == null || bytes == null) {
+                response.error("save_failed", "The MIDI destination is unavailable.", null)
+                return
+            }
+            try {
+                val output = contentResolver.openOutputStream(uri)
+                    ?: throw IOException("Could not open the selected destination.")
+                output.use { it.write(bytes) }
+                response.success(true)
+            } catch (error: IOException) {
+                response.error("save_failed", "Could not save MIDI: ${error.message}", null)
+            } catch (error: SecurityException) {
+                response.error("save_failed", "Cannot access MIDI destination: ${error.message}", null)
+            }
+            return
+        }
         if (requestCode != pdfRequest) return
         val response = pdfResult ?: return
         val pages = pdfPages

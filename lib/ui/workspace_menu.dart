@@ -10,6 +10,7 @@ void showWorkspaceMenu(
   required VoidCallback onSaveAs,
   required VoidCallback onRename,
   required VoidCallback onExportPdf,
+  required VoidCallback onExportMidi,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -40,6 +41,7 @@ void showWorkspaceMenu(
             (Icons.save_as_outlined, 'Save as', onSaveAs),
             (Icons.drive_file_rename_outline, 'Rename', onRename),
             (Icons.picture_as_pdf_outlined, 'Export PDF', onExportPdf),
+            (Icons.piano, 'Export MIDI', onExportMidi),
           ])
             ListTile(
               leading: Icon(item.$1),
@@ -51,7 +53,6 @@ void showWorkspaceMenu(
             ),
           for (final item in const [
             (Icons.music_note, 'Export MusicXML'),
-            (Icons.piano, 'Export MIDI'),
             (Icons.tune, 'Time and measures'),
             (Icons.settings_outlined, 'Settings / ad-free'),
           ])

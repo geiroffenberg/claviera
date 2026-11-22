@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../audio/piano_preview.dart';
+import '../audio/midi_export.dart';
 import '../audio/score_playback.dart';
 import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
@@ -51,6 +52,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool playing = false;
   bool saving = false;
   bool exportingPdf = false;
+  bool exportingMidi = false;
   int playbackRevision = 0;
   int tempo = 120;
 
@@ -72,6 +74,38 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Project get project =>
       Project(name: projectName, tempo: tempo, editor: editor);
   bool get dirty => ProjectCodec.encode(project) != savedState;
+
+  Future<void> _exportMidi() async {
+    if (exportingMidi) return;
+    setState(() => exportingMidi = true);
+    try {
+      final bytes = MidiExport.encode(editor, tempo);
+      final safeName = projectName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final saved = await const MethodChannel(
+        'claviera/midi',
+      ).invokeMethod<bool>('save', {'name': '$safeName.mid', 'bytes': bytes});
+      if (mounted && saved == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('MIDI saved.')));
+      }
+    } on PlatformException catch (error) {
+      _midiError(error.message ?? error.code);
+    } on MissingPluginException {
+      _midiError('MIDI export is available on Android only.');
+    } on StateError catch (error) {
+      _midiError(error.message);
+    } finally {
+      if (mounted) setState(() => exportingMidi = false);
+    }
+  }
+
+  void _midiError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('MIDI export error: $error')));
+  }
 
   Future<void> _exportPdf() async {
     if (exportingPdf) return;
@@ -1107,7 +1141,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         }
       },
       child: IgnorePointer(
-        ignoring: saving || exportingPdf,
+        ignoring: saving || exportingPdf || exportingMidi,
         child: Scaffold(
           body: SafeArea(
             child: Column(
@@ -1381,6 +1415,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onSaveAs: () => _saveProject(saveAs: true),
                               onRename: () => _saveProject(rename: true),
                               onExportPdf: _exportPdf,
+                              onExportMidi: _exportMidi,
                               onRedo: () => setState(() {
                                 editor.redo();
                                 selectedMeasure = selectedMeasure.clamp(

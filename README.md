@@ -76,6 +76,13 @@ The app requests both landscape orientations at startup.
   file picker. The score is arranged into systems on A4 portrait pages.
   PDF pages are rendered as images; dense passages may need manual review
   before printing. PDF is for sharing/printing, not reopening for editing.
+- Choose **Export MIDI** to save a standard `.mid` file with Android's file
+  picker. It includes all voices, chords, rests as silence, sustained ties,
+  tempo, time and key changes. Repeat passages are written out twice; the
+  same unsupported repeat structures and ties as playback are reported.
+  MIDI exports use piano sounds and are not editable Claviera projects.
+  Because the editor stores key signatures but not major/minor mode, MIDI key
+  signature metadata is marked major. Pitches are unchanged.
 - The menu contains **New score**, **Open project**, **Save**, **Save as** and
   **Rename**. The first save asks for a name; Save updates that project, while
   Save as creates a separate copy. New and Open ask whether to save or discard
@@ -116,6 +123,8 @@ lib/
   audio/
     piano_preview.dart         Android preview and playback controller
     score_playback.dart        Playback timing from logical voice events
+    score_timeline.dart        Shared repeat traversal and validation
+    midi_export.dart           Standard MIDI file encoding
   storage/
     projects.dart              Versioned local project storage
   notation/
@@ -135,7 +144,7 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-MusicXML/MIDI export, ads, and clef changes per bar are not implemented. The remaining disabled menu
+MusicXML export, ads, and clef changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
 
