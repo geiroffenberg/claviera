@@ -14,6 +14,7 @@ const d = Pitch(diatonicStep: 29, midiNote: 62);
 void main() {
   test('ornaments are mutually exclusive and remain on tied attacks', () {
     final editor = ScoreEditor(emptyScore);
+    editor.insertBars(1, 1, initialTempo: 120);
     editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
     final id = editor.append(
       voice: Voice.v1,
@@ -115,6 +116,7 @@ void main() {
 
   test('fermatas work on rests and the last segment of tied notes', () {
     final editor = ScoreEditor(emptyScore);
+    editor.insertBars(1, 1, initialTempo: 120);
     final rest = editor.append(
       voice: Voice.v1,
       staff: Staff.treble,
@@ -162,6 +164,7 @@ void main() {
         throwsArgumentError,
       );
       final editor = ScoreEditor(emptyScore);
+      editor.insertBars(1, 1, initialTempo: 120);
       editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
       final id = editor.append(
         voice: Voice.v1,
@@ -184,6 +187,7 @@ void main() {
     'articulations belong to the chord attack and survive edits and undo',
     () {
       final editor = ScoreEditor(emptyScore);
+      editor.insertBars(1, 1, initialTempo: 120);
       editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
       final restId = editor.eventsFor(Voice.v1).first.id;
       expect(
@@ -374,10 +378,11 @@ void main() {
   });
 
   test(
-    'crossing final bar creates tied segments and undo removes added measure',
+    'a note can cross an explicitly added bar and both actions are undoable',
     () {
       final editor = ScoreEditor(emptyScore);
       editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      editor.insertBars(1, 1, initialTempo: 120);
       final id = editor.append(
         voice: Voice.v1,
         staff: Staff.treble,
@@ -411,7 +416,10 @@ void main() {
         (0, 960, true, false),
       );
       editor.undo();
+      expect(editor.score.measures, hasLength(2));
+      editor.undo();
       expect(editor.score.measures, hasLength(1));
+      editor.redo();
       editor.redo();
       expect(editor.score.measures, hasLength(2));
     },

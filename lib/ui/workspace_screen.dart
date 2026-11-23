@@ -70,6 +70,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   PlaybackPlan? playbackPlan;
   PlaybackFrame? playbackFrame;
   int tempo = 120;
+  BarClipboard? barClipboard;
 
   VoiceEvent? get selected => editor.eventById(selectedId);
   int get duration => noteValue.duration(dots: dots);
@@ -889,6 +890,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                 label: const Text('Repeats'),
                 onPressed: () => Navigator.pop(context, 'repeats'),
               ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.view_week_outlined),
+                label: const Text('Edit bars'),
+                onPressed: () => Navigator.pop(context, 'edit'),
+              ),
             ],
           ),
         ),
@@ -907,6 +913,176 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       await _scoreSettings(measure: measure == 0 ? null : measure);
     } else if (choice == 'repeats') {
       await _setBarRepeats(measure);
+    } else if (choice == 'edit') {
+      await _editBars(measure);
+    }
+  }
+
+  Future<void> _editBars(int measure) async {
+    var input = '1';
+    String? error;
+    final choice = await showDialog<(String, int)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          void choose(String action) {
+            final count = int.tryParse(input);
+            if (action != 'pasteBefore' &&
+                action != 'pasteAfter' &&
+                (count == null || count < 1 || count > 100000)) {
+              update(() => error = 'Enter a number from 1 to 100000.');
+              return;
+            }
+            Navigator.pop(context, (action, count ?? 1));
+          }
+
+          return AlertDialog(
+            title: Text('Edit bars from ${measure + 1}'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                    initialValue: input,
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) => input = value,
+                    decoration: InputDecoration(
+                      labelText: 'Number of consecutive bars',
+                      errorText: error,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => choose('append'),
+                        child: const Text('Add at end'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => choose('before'),
+                        child: const Text('Insert before'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => choose('after'),
+                        child: const Text('Insert after'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => choose('delete'),
+                        child: const Text('Delete'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => choose('cut'),
+                        child: const Text('Cut'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => choose('copy'),
+                        child: const Text('Copy'),
+                      ),
+                      OutlinedButton(
+                        onPressed: barClipboard == null
+                            ? null
+                            : () => choose('pasteBefore'),
+                        child: const Text('Paste before'),
+                      ),
+                      OutlinedButton(
+                        onPressed: barClipboard == null
+                            ? null
+                            : () => choose('pasteAfter'),
+                        child: const Text('Paste after'),
+                      ),
+                    ],
+                  ),
+                  if (barClipboard != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text('${barClipboard!.count} bar(s) copied.'),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final (action, count) = choice;
+    if (action == 'delete' || action == 'cut') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(action == 'cut' ? 'Cut bars?' : 'Delete bars?'),
+          content: Text(
+            'Remove $count bar(s) starting at bar ${measure + 1}, including '
+            'their notes and markings? You can undo this.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(action == 'cut' ? 'Cut' : 'Delete'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    var copied = false;
+    _perform(() {
+      switch (action) {
+        case 'append':
+          final index = editor.measureCount;
+          editor.insertBars(index, count, initialTempo: tempo);
+          selectedMeasure = index;
+        case 'before':
+          editor.insertBars(measure, count, initialTempo: tempo);
+          selectedMeasure = measure;
+        case 'after':
+          editor.insertBars(measure + 1, count, initialTempo: tempo);
+          selectedMeasure = measure + 1;
+        case 'copy':
+          barClipboard = editor.copyBars(measure, count, initialTempo: tempo);
+          copied = true;
+        case 'cut':
+          final clipboard = editor.copyBars(
+            measure,
+            count,
+            initialTempo: tempo,
+          );
+          editor.deleteBars(measure, count, initialTempo: tempo);
+          barClipboard = clipboard;
+          copied = true;
+          selectedMeasure = measure.clamp(0, editor.measureCount - 1);
+        case 'delete':
+          editor.deleteBars(measure, count, initialTempo: tempo);
+          selectedMeasure = measure.clamp(0, editor.measureCount - 1);
+        case 'pasteBefore':
+        case 'pasteAfter':
+          final index = action == 'pasteBefore' ? measure : measure + 1;
+          editor.pasteBars(index, barClipboard!, initialTempo: tempo);
+          selectedMeasure = index;
+      }
+      if (action != 'copy') {
+        selectedId = null;
+        pitchIndex = 0;
+        replaceSelectedRest = false;
+      }
+    });
+    if (copied && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$count bar(s) copied.')));
     }
   }
 
@@ -1891,8 +2067,35 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                             )
                                           : null,
                                     ),
-                                    Text(
-                                      'Bar ${(playbackFrame?.measure ?? selectedMeasure) + 1}',
+                                    Tooltip(
+                                      message: 'Bar menu',
+                                      child: TextButton(
+                                        onPressed: playing
+                                            ? null
+                                            : () =>
+                                                  _barSettings(selectedMeasure),
+                                        style: TextButton.styleFrom(
+                                          minimumSize: Size.zero,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 2,
+                                            vertical: 8,
+                                          ),
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Bar ${(playbackFrame?.measure ?? selectedMeasure) + 1}',
+                                            ),
+                                            const Icon(
+                                              Icons.arrow_drop_down,
+                                              size: 16,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                     IconButton(
                                       tooltip: 'Next bar',

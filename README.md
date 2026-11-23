@@ -66,6 +66,18 @@ The app requests both landscape orientations at startup.
   until the next change of the same kind. Key changes affect existing notes
   that begin under the new key; a note tied across a key change retains the
   pitch from its start. Changes are saved with the project and can be undone.
+- Tap the **Bar** label between the header arrows, or a bar number on the
+  score, and choose **Edit bars** to add bars at the end, insert before or
+  after a bar, delete, cut or copy consecutive bars, and paste copied bars
+  before or after a bar. Paste inserts rather than replaces bars. The bar
+  clipboard lasts for the current app session. These actions include all
+  voices and markings, support Undo and Redo, and preserve the effective key,
+  meter and tempo of existing and copied bars. Extra change markings may be
+  added where needed to preserve those settings.
+- Bars are added manually; add enough bars before entering or extending a
+  note past the end. Deleting or cutting asks for confirmation, and at least
+  one bar must remain. Operations that would split a tied note or a hairpin
+  across a bar boundary are blocked; edit the tie or hairpin first.
 - Choose **Repeats** in Bar settings to add a start sign at the beginning or an
   end sign at the end of that bar. An end sign plays the passage one additional
   time, then continues; without an unmatched start sign it repeats from the
@@ -176,8 +188,8 @@ cannot overlap a later note.
 
 Notes crossing a barline are one logical event shown as tied segments; editing
 or deleting a tied note (or a pitch in its chord) affects the entire tied
-event, including its continuation in the next bar. Measures are added as
-needed.
+event, including its continuation in the next bar. The final bar has a
+closing barline.
 
 V1 and V3 use up-stems; V2 and V4 use down-stems on both staves. Consecutive
 eighth notes and shorter notes in the same voice, staff and beat are beamed,

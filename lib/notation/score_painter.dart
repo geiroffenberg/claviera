@@ -41,6 +41,7 @@ class ScorePainter extends CustomPainter {
     this.previewVoice = Voice.v1,
     this.staffSpace = 10,
     this.measureNumberOffset = 0,
+    this.showFinalBarline = true,
   });
 
   final Score score;
@@ -56,6 +57,7 @@ class ScorePainter extends CustomPainter {
   final Voice previewVoice;
   final double staffSpace;
   final int measureNumberOffset;
+  final bool showFinalBarline;
 
   double get _s => staffSpace;
   double get _trebleTop => 8 * _s;
@@ -318,6 +320,15 @@ class ScorePainter extends CustomPainter {
       final startRepeat =
           m < score.measures.length && score.measures[m].repeatStart;
       final endRepeat = m > 0 && score.measures[m - 1].repeatEnd;
+      if (m == score.measures.length && showFinalBarline && !endRepeat) {
+        canvas.drawLine(
+          Offset(x + .4 * _s, _trebleTop),
+          Offset(x + .4 * _s, _bassTop + 4 * _s),
+          Paint()
+            ..color = const Color(0xff333c39)
+            ..strokeWidth = 3,
+        );
+      }
       final repeatInk = Paint()..color = const Color(0xff333c39);
       if (startRepeat || endRepeat) {
         repeatInk.strokeWidth = 3;
@@ -894,5 +905,6 @@ class ScorePainter extends CustomPainter {
       previewDuration != oldDelegate.previewDuration ||
       previewVoice != oldDelegate.previewVoice ||
       measureNumberOffset != oldDelegate.measureNumberOffset ||
+      showFinalBarline != oldDelegate.showFinalBarline ||
       staffSpace != oldDelegate.staffSpace;
 }

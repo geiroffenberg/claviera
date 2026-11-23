@@ -160,6 +160,7 @@ void main() {
         measures: [Measure()],
       ),
     );
+    editor.insertBars(1, 15, initialTempo: 120);
     final id = editor.append(
       voice: Voice.v1,
       staff: Staff.treble,
@@ -515,6 +516,7 @@ void main() {
         measures: [Measure()],
       ),
     );
+    editor.insertBars(1, 1, initialTempo: 120);
     editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
     editor.append(
       voice: Voice.v1,
@@ -544,6 +546,7 @@ void main() {
           measures: [Measure()],
         ),
       );
+      editor.insertBars(1, 1, initialTempo: 120);
       editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
       final id = editor.append(
         voice: Voice.v1,

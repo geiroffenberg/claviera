@@ -7,6 +7,63 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('bar menu adds, copies and inserts bars', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    Future<void> openBarEditor() async {
+      await tester.tap(find.byTooltip('Bar menu'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Edit bars'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit bars'));
+      await tester.pumpAndSettle();
+    }
+
+    await openBarEditor();
+    await tester.enterText(find.byType(TextFormField), '2');
+    await tester.tap(find.text('Add at end'));
+    await tester.pumpAndSettle();
+    expect(viewport().score.measures, hasLength(6));
+    expect(find.text('Bar 5'), findsOneWidget);
+    await openBarEditor();
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+    await openBarEditor();
+    await tester.tap(find.text('Paste before'));
+    await tester.pumpAndSettle();
+    expect(viewport().score.measures, hasLength(7));
+    expect(find.text('Bar 5'), findsOneWidget);
+  });
+
+  testWidgets('bar editing fits on a phone and confirms deletion', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    await tester.tap(find.byTooltip('Bar menu'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Edit bars'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit bars'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete bars?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ScoreViewport>(find.byType(ScoreViewport)).score.measures,
+      hasLength(4),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('getting started is accessible and scrollable in landscape', (
     tester,
   ) async {

@@ -21,11 +21,12 @@ class MusicXmlExport {
     void text(String name, Object value) =>
         xml.element(name, nest: value.toString());
 
-    void repeat(String location, String direction) {
+    void repeat(String location, String direction, {bool finalBar = false}) {
       xml.element(
         'barline',
         attributes: {'location': location},
         nest: () {
+          if (finalBar) text('bar-style', 'light-heavy');
           xml.element('repeat', attributes: {'direction': direction});
         },
       );
@@ -386,7 +387,19 @@ class MusicXmlExport {
                       },
                     );
                   }
-                  if (measure.repeatEnd) repeat('right', 'backward');
+                  if (measure.repeatEnd) {
+                    repeat(
+                      'right',
+                      'backward',
+                      finalBar: index == score.measures.length - 1,
+                    );
+                  } else if (index == score.measures.length - 1) {
+                    xml.element(
+                      'barline',
+                      attributes: {'location': 'right'},
+                      nest: () => text('bar-style', 'light-heavy'),
+                    );
+                  }
                 },
               );
             }

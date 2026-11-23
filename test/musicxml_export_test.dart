@@ -12,6 +12,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('MusicXML marks the final barline including an end repeat', () {
+    final editor = ScoreEditor(blankScore);
+    editor.setMeasureRepeats(3, start: false, end: true);
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Final')),
+    );
+    final bars = xml.findAllElements('barline').toList();
+    expect(bars, hasLength(1));
+    expect(bars.single.getElement('bar-style')!.innerText, 'light-heavy');
+    expect(
+      bars.single.getElement('repeat')!.getAttribute('direction'),
+      'backward',
+    );
+  });
+
   test('MusicXML carries a sharp without repeating the written sign', () {
     final editor = ScoreEditor(blankScore);
     editor.append(

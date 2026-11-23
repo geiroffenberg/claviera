@@ -133,7 +133,8 @@ void _showGettingStarted(BuildContext context) {
                 (
                   'Score settings',
                   'Tap the clefs or time signature to set the initial key '
-                      'and meter. Tap a bar number for settings for that bar.',
+                      'and meter. Tap the Bar label or a bar number for bar '
+                      'settings and to add or edit bars.',
                 ),
                 (
                   'Save and back up',

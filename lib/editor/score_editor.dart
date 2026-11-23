@@ -86,6 +86,46 @@ class _Snapshot {
   final Map<int, ArpeggioDirection> arpeggios;
 }
 
+class _BarData {
+  const _BarData({
+    required this.time,
+    required this.key,
+    required this.tempo,
+    this.explicitTime = false,
+    this.explicitKey = false,
+    this.explicitTempo = false,
+    this.repeatStart = false,
+    this.repeatEnd = false,
+  });
+
+  final TimeSignature time;
+  final int key;
+  final int tempo;
+  final bool explicitTime;
+  final bool explicitKey;
+  final bool explicitTempo;
+  final bool repeatStart;
+  final bool repeatEnd;
+}
+
+class BarClipboard {
+  BarClipboard._(
+    this._bars,
+    this._events,
+    this._dynamics,
+    this._hairpins,
+    this._arpeggios,
+  );
+
+  final List<_BarData> _bars;
+  final List<VoiceEvent> _events;
+  final Map<int, DynamicMark> _dynamics;
+  final List<Hairpin> _hairpins;
+  final Map<int, ArpeggioDirection> _arpeggios;
+
+  int get count => _bars.length;
+}
+
 class ScoreEditor {
   ScoreEditor(Score source)
     : _source = source,
@@ -611,6 +651,247 @@ class ScoreEditor {
     });
   }
 
+  List<_BarData> _barData(int initialTempo) {
+    var time = TimeSignature(_beats, _unit);
+    var key = _key;
+    var tempo = initialTempo;
+    return [
+      for (var i = 0; i < _measureCount; i++)
+        _BarData(
+          time: time = _times[i] ?? time,
+          key: key = _keys[i] ?? key,
+          tempo: tempo = _tempos[i] ?? tempo,
+          explicitTime: _times.containsKey(i),
+          explicitKey: _keys.containsKey(i),
+          explicitTempo: _tempos.containsKey(i),
+          repeatStart: _repeatStarts.contains(i),
+          repeatEnd: _repeatEnds.contains(i),
+        ),
+    ];
+  }
+
+  void _checkBarRange(int start, int count) {
+    if (count < 1 || start < 0 || start + count > _measureCount) {
+      throw const EditException('Choose a valid range of bars.');
+    }
+  }
+
+  void _checkBoundary(int tick) {
+    if (_events.any(
+      (event) => !event.isRest && event.start < tick && event.end > tick,
+    )) {
+      throw const EditException(
+        'Edit the tied note crossing this bar boundary first.',
+      );
+    }
+    if (_hairpins.any(
+      (hairpin) =>
+          hairpin.start < tick &&
+          (hairpin.end == null
+              ? tick < measureStart(_measureCount)
+              : hairpin.end! >= tick),
+    )) {
+      throw const EditException(
+        'Finish or edit the hairpin crossing this bar boundary first.',
+      );
+    }
+  }
+
+  BarClipboard copyBars(int start, int count, {required int initialTempo}) {
+    _checkBarRange(start, count);
+    final firstTick = measureStart(start);
+    final endTick = measureStart(start + count);
+    _checkBoundary(firstTick);
+    _checkBoundary(endTick);
+    if (_hairpins.any(
+      (hairpin) =>
+          hairpin.end == null &&
+          hairpin.start >= firstTick &&
+          hairpin.start < endTick,
+    )) {
+      throw const EditException(
+        'Finish or remove the unfinished hairpin first.',
+      );
+    }
+    return BarClipboard._(
+      _barData(initialTempo).sublist(start, start + count),
+      [
+        for (final event in _events)
+          if (!event.generatedRest &&
+              event.start >= firstTick &&
+              event.start < endTick)
+            event.copyWith(start: event.start - firstTick),
+      ],
+      {
+        for (final entry in _dynamics.entries)
+          if (entry.key >= firstTick && entry.key < endTick)
+            entry.key - firstTick: entry.value,
+      },
+      [
+        for (final hairpin in _hairpins)
+          if (hairpin.start >= firstTick && hairpin.start < endTick)
+            Hairpin(
+              start: hairpin.start - firstTick,
+              end: hairpin.end! - firstTick,
+              kind: hairpin.kind,
+            ),
+      ],
+      {
+        for (final entry in _arpeggios.entries)
+          if (entry.key >= firstTick && entry.key < endTick)
+            entry.key - firstTick: entry.value,
+      },
+    );
+  }
+
+  void insertBars(int index, int count, {required int initialTempo}) {
+    if (index < 0 || index > _measureCount || count < 1) {
+      throw const EditException('Choose a valid number of bars.');
+    }
+    final bars = _barData(initialTempo);
+    final context = bars[index == 0 ? 0 : index - 1];
+    final blank = _BarData(
+      time: context.time,
+      key: context.key,
+      tempo: context.tempo,
+    );
+    _spliceBars(
+      index,
+      0,
+      BarClipboard._(List.filled(count, blank), [], {}, [], {}),
+      initialTempo,
+    );
+  }
+
+  void pasteBars(
+    int index,
+    BarClipboard clipboard, {
+    required int initialTempo,
+  }) {
+    if (index < 0 || index > _measureCount) {
+      throw const EditException('Choose a valid insertion point.');
+    }
+    _spliceBars(index, 0, clipboard, initialTempo);
+  }
+
+  void deleteBars(int start, int count, {required int initialTempo}) {
+    _checkBarRange(start, count);
+    if (count == _measureCount) {
+      throw const EditException('Keep at least one bar in the score.');
+    }
+    _spliceBars(start, count, BarClipboard._([], [], {}, [], {}), initialTempo);
+  }
+
+  void _spliceBars(
+    int start,
+    int removeCount,
+    BarClipboard inserted,
+    int initialTempo,
+  ) {
+    if (_measureCount - removeCount + inserted.count > 100000) {
+      throw const EditException('The score cannot exceed 100000 bars.');
+    }
+    final firstTick = measureStart(start);
+    final endTick = measureStart(start + removeCount);
+    _checkBoundary(firstTick);
+    _checkBoundary(endTick);
+    if (_hairpins.any(
+      (hairpin) =>
+          hairpin.end == null &&
+          hairpin.start >= firstTick &&
+          hairpin.start < endTick,
+    )) {
+      throw const EditException(
+        'Finish or remove the unfinished hairpin first.',
+      );
+    }
+    final bars = _barData(initialTempo)
+      ..replaceRange(start, start + removeCount, inserted._bars);
+    final insertedTicks = inserted._bars.fold<int>(
+      0,
+      (total, bar) => total + bar.time.ticks,
+    );
+    final shift = insertedTicks - (endTick - firstTick);
+    int? remap(int tick) {
+      if (tick < firstTick) return tick;
+      if (tick >= endTick) return tick + shift;
+      return null;
+    }
+
+    _commit(() {
+      _events = [
+        for (final event in _events)
+          if (!event.generatedRest && remap(event.start) != null)
+            event.copyWith(start: remap(event.start)!),
+        for (final event in inserted._events)
+          VoiceEvent(
+            id: _nextId++,
+            start: firstTick + event.start,
+            duration: event.duration,
+            voice: event.voice,
+            staff: event.staff,
+            pitches: event.pitches,
+            articulations: event.articulations,
+          ),
+      ];
+      _dynamics = {
+        for (final entry in _dynamics.entries)
+          if (remap(entry.key) != null) remap(entry.key)!: entry.value,
+        for (final entry in inserted._dynamics.entries)
+          firstTick + entry.key: entry.value,
+      };
+      _arpeggios = {
+        for (final entry in _arpeggios.entries)
+          if (remap(entry.key) != null) remap(entry.key)!: entry.value,
+        for (final entry in inserted._arpeggios.entries)
+          firstTick + entry.key: entry.value,
+      };
+      _hairpins = [
+        for (final hairpin in _hairpins)
+          if (remap(hairpin.start) != null)
+            Hairpin(
+              start: remap(hairpin.start)!,
+              end: hairpin.end == null ? null : remap(hairpin.end!),
+              kind: hairpin.kind,
+            ),
+        for (final hairpin in inserted._hairpins)
+          Hairpin(
+            start: firstTick + hairpin.start,
+            end: firstTick + hairpin.end!,
+            kind: hairpin.kind,
+          ),
+      ];
+      _measureCount = bars.length;
+      _beats = bars.first.time.beats;
+      _unit = bars.first.time.unit;
+      _key = bars.first.key;
+      _times = {
+        for (var i = 1; i < bars.length; i++)
+          if (bars[i].explicitTime || bars[i].time != bars[i - 1].time)
+            i: bars[i].time,
+      };
+      _keys = {
+        for (var i = 1; i < bars.length; i++)
+          if (bars[i].explicitKey || bars[i].key != bars[i - 1].key)
+            i: bars[i].key,
+      };
+      _tempos = {
+        for (var i = 0; i < bars.length; i++)
+          if (bars[i].explicitTempo ||
+              bars[i].tempo != (i == 0 ? initialTempo : bars[i - 1].tempo))
+            i: bars[i].tempo,
+      };
+      _repeatStarts = {
+        for (var i = 0; i < bars.length; i++)
+          if (bars[i].repeatStart) i,
+      };
+      _repeatEnds = {
+        for (var i = 0; i < bars.length; i++)
+          if (bars[i].repeatEnd) i,
+      };
+    });
+  }
+
   void setScoreSettings({
     required int beats,
     required int unit,
@@ -778,12 +1059,6 @@ class ScoreEditor {
     });
   }
 
-  void _ensureMeasures(int end) {
-    if (end > 0) {
-      _measureCount = math.max(_measureCount, measureAtTick(end - 1) + 1);
-    }
-  }
-
   List<int> get _notationValues => <int>[
     for (final value in NoteValue.values)
       for (var dots = 0; dots <= value.maxDots; dots++)
@@ -896,6 +1171,9 @@ class ScoreEditor {
     var id = 0;
     _commit(() {
       final start = nextTick(voice, measure: measure);
+      if (start + duration > measureStart(_measureCount)) {
+        throw const EditException('Add more bars before writing past the end.');
+      }
       if (storedEventsFor(voice).any(
         (e) =>
             e.start < start + duration &&
@@ -917,7 +1195,6 @@ class ScoreEditor {
           pitches: pitch == null ? [] : [pitch],
         ),
       );
-      _ensureMeasures(start + duration);
     });
     return id;
   }
@@ -1016,6 +1293,9 @@ class ScoreEditor {
     final following = events.skipWhile((e) => e.id != id).skip(1).toList();
     final nextNote = following.where((e) => !e.isRest).firstOrNull;
     final newEnd = event.start + duration;
+    if (newEnd > measureStart(_measureCount)) {
+      throw const EditException('Add more bars before writing past the end.');
+    }
     if (nextNote != null && newEnd > nextNote.start) {
       throw const EditException('The duration would overlap a later note.');
     }
@@ -1048,7 +1328,6 @@ class ScoreEditor {
           }
         }
       }
-      _ensureMeasures(newEnd);
     });
   }
 

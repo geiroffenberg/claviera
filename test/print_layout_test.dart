@@ -166,6 +166,7 @@ void main() {
 
   test('systems retain tied segments on either side of a line break', () {
     final editor = ScoreEditor(blankScore);
+    editor.insertBars(4, 1, initialTempo: 120);
     editor.append(
       voice: Voice.v1,
       staff: Staff.treble,

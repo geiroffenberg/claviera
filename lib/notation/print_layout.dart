@@ -165,6 +165,9 @@ class PrintLayout {
         selectedPitch: 0,
         staffSpace: staffSpace,
         measureNumberOffset: system.firstMeasure,
+        showFinalBarline:
+            system.firstMeasure + system.score.measures.length ==
+            score.measures.length,
       ).paint(
         canvas!,
         Size(ScorePainter.widthFor(system.score, staffSpace), system.height),

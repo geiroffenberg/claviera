@@ -5,6 +5,32 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('only a final system draws a final barline', (tester) async {
+    const score = Score(
+      title: 'Bars',
+      beatsPerMeasure: 4,
+      beatUnit: 4,
+      measures: [Measure()],
+    );
+    int lineCount(bool finalBar) {
+      final canvas = TestRecordingCanvas();
+      ScorePainter(
+        score: score,
+        selectedEvent: null,
+        selectedPitch: 0,
+        showFinalBarline: finalBar,
+      ).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      return canvas.invocations
+          .where((call) => call.invocation.memberName == #drawLine)
+          .length;
+    }
+
+    expect(lineCount(true), lineCount(false) + 1);
+  });
+
   testWidgets('a number is painted above every starting barline', (
     tester,
   ) async {
