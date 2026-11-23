@@ -1357,11 +1357,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                         ignoring: playing,
                         child: _rail(64, [
                           _button(
+                            mode == WorkspaceMode.write
+                                ? 'Write mode'
+                                : 'Edit mode',
+                            mode == WorkspaceMode.write
+                                ? Icons.edit
+                                : Icons.touch_app,
+                            () => setState(() {
+                              piano.stop();
+                              mode = mode == WorkspaceMode.write
+                                  ? WorkspaceMode.edit
+                                  : WorkspaceMode.write;
+                              preview = null;
+                            }),
+                            selected: mode == WorkspaceMode.edit,
+                          ),
+                          _button(
                             rest ? 'Rest' : 'Note',
                             rest ? Icons.hotel : Icons.music_note,
                             () => setState(() => rest = !rest),
                             selected: rest,
                           ),
+                          const Divider(),
                           _button(
                             'Dynamics',
                             Icons.graphic_eq,
@@ -1380,22 +1397,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             selected: dotted,
                           ),
                           const Divider(),
-                          _button(
-                            mode == WorkspaceMode.write
-                                ? 'Write mode'
-                                : 'Edit mode',
-                            mode == WorkspaceMode.write
-                                ? Icons.edit
-                                : Icons.touch_app,
-                            () => setState(() {
-                              piano.stop();
-                              mode = mode == WorkspaceMode.write
-                                  ? WorkspaceMode.edit
-                                  : WorkspaceMode.write;
-                              preview = null;
-                            }),
-                            selected: mode == WorkspaceMode.edit,
-                          ),
                           _button(
                             'Chord stack',
                             Icons.library_add,

@@ -7,6 +7,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('mode toggles are grouped at the top of the left rail', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final mode = find.byTooltip('Write mode');
+    final input = find.byTooltip('Note');
+    final divider = find
+        .descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Divider),
+        )
+        .first;
+    final dynamics = find.byTooltip('Dynamics');
+    expect(tester.getCenter(mode).dy, lessThan(tester.getCenter(input).dy));
+    expect(tester.getCenter(input).dy, lessThan(tester.getCenter(divider).dy));
+    expect(
+      tester.getCenter(divider).dy,
+      lessThan(tester.getCenter(dynamics).dy),
+    );
+    await tester.tap(mode);
+    await tester.tap(input);
+    await tester.pump();
+    expect(find.byTooltip('Edit mode'), findsOneWidget);
+    expect(find.byTooltip('Rest'), findsOneWidget);
+  });
+
   testWidgets('beaming updates after writing and undoing notes', (
     tester,
   ) async {
