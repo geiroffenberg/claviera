@@ -103,6 +103,19 @@ class PianoPreview {
         if (revision == _revision) _playingScore = false;
         return false;
       }
+      if (plan.notes.isNotEmpty) {
+        final prepared = await _channel.invokeMethod<bool>('prepareScore');
+        if (prepared == null) {
+          throw PlatformException(
+            code: 'invalid_response',
+            message: 'Could not prepare piano playback.',
+          );
+        }
+        if (!prepared || _disposed || revision != _revision) {
+          if (revision == _revision) _playingScore = false;
+          return false;
+        }
+      }
       await _channel.invokeMethod<void>('playScore', {
         'notes': plan.notes.map((note) => note.toMap()).toList(),
       });

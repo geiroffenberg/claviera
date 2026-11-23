@@ -30,6 +30,9 @@ class MainActivity : FlutterActivity() {
     private var stream = 0
     private var startedAt = 0L
     private var pendingStop: Runnable? = null
+    private var preparationStream = 0
+    private var preparationTask: Runnable? = null
+    private var preparationResult: MethodChannel.Result? = null
     private val scheduledPlayback = mutableListOf<Runnable>()
     private val playbackStreams = mutableSetOf<Int>()
     private var channel: MethodChannel? = null
@@ -189,6 +192,7 @@ class MainActivity : FlutterActivity() {
                         stopAfterMinimumDuration()
                         result.success(null)
                     }
+                    "prepareScore" -> prepareScore(result)
                     "playScore" -> {
                         val notes = call.argument<List<Map<String, Int>>>("notes")
                         if (notes == null || notes.any {
@@ -411,6 +415,30 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun prepareScore(result: MethodChannel.Result) {
+        val soundPool = pool
+        if (soundPool == null || pendingInit != null || loadingFailed) {
+            result.error("not_ready", "Piano samples are not ready.", null)
+            return
+        }
+        stopScore()
+        val sound = soundPool.play(samples.getValue(58), 0f, 0f, 1, 0, 1f)
+        if (sound == 0) {
+            result.error("play_failed", "Unable to prepare piano playback.", null)
+            return
+        }
+        preparationStream = sound
+        preparationResult = result
+        val task = Runnable {
+            preparationTask = null
+            preparationResult = null
+            result.success(true)
+        }
+        preparationTask = task
+        // Keep the output active before starting the score's clock.
+        handler.postDelayed(task, 200)
+    }
+
     private fun startScore(notes: List<Map<String, Int>>) {
         stopScore()
         pendingStop?.let(handler::removeCallbacks)
@@ -446,6 +474,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopScore() {
+        preparationTask?.let(handler::removeCallbacks)
+        preparationTask = null
+        preparationResult?.success(false)
+        preparationResult = null
+        if (preparationStream != 0) pool?.stop(preparationStream)
+        preparationStream = 0
         for (task in scheduledPlayback) handler.removeCallbacks(task)
         scheduledPlayback.clear()
         for (sound in playbackStreams) pool?.stop(sound)

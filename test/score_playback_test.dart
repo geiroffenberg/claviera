@@ -637,13 +637,18 @@ void main() {
   final calls = <MethodCall>[];
   final errors = <String>[];
   Completer<void>? loading;
+  Completer<bool>? preparing;
   setUp(() {
     calls.clear();
     errors.clear();
     loading = null;
+    preparing = null;
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       if (call.method == 'initialize' && loading != null) await loading!.future;
+      if (call.method == 'prepareScore') {
+        return preparing == null ? true : await preparing!.future;
+      }
       return null;
     });
   });
@@ -662,7 +667,11 @@ void main() {
     final future = piano.playScore(plan, onFinished: () => finished = true);
     await tester.pump();
     expect(await future, isTrue);
-    expect(calls.map((call) => call.method), ['initialize', 'playScore']);
+    expect(calls.map((call) => call.method), [
+      'initialize',
+      'prepareScore',
+      'playScore',
+    ]);
     final arguments = calls.last.arguments as Map;
     expect((arguments['notes'] as List), hasLength(4));
     await tester.pump(const Duration(milliseconds: 100));
@@ -693,6 +702,86 @@ void main() {
     loading!.complete();
     await tester.pump();
     expect(await future, isFalse);
+    expect(calls.where((call) => call.method == 'playScore'), isEmpty);
+    piano.dispose();
+  });
+
+  testWidgets('score waits for audio preparation and can be stopped', (
+    tester,
+  ) async {
+    preparing = Completer<bool>();
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    final future = piano.playScore(
+      PlaybackPlan(ScoreEditor(fixture), 120),
+      onFinished: () {},
+    );
+    await tester.pump();
+    expect(calls.map((call) => call.method), ['initialize', 'prepareScore']);
+    piano.stopScore();
+    preparing!.complete(false);
+    await tester.pump();
+    expect(await future, isFalse);
+    expect(calls.map((call) => call.method), [
+      'initialize',
+      'prepareScore',
+      'stopScore',
+    ]);
+    expect(errors, isEmpty);
+    piano.dispose();
+  });
+
+  testWidgets('score starts only after audio preparation succeeds', (
+    tester,
+  ) async {
+    preparing = Completer<bool>();
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    final future = piano.playScore(
+      PlaybackPlan(ScoreEditor(fixture), 120),
+      onFinished: () {},
+    );
+    await tester.pump();
+    expect(calls.map((call) => call.method), ['initialize', 'prepareScore']);
+    preparing!.complete(true);
+    await tester.pump();
+    expect(await future, isTrue);
+    expect(calls.last.method, 'playScore');
+    piano.dispose();
+    await tester.pump();
+  });
+
+  testWidgets('audio preparation failure is reported without playing', (
+    tester,
+  ) async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'prepareScore') {
+        throw PlatformException(
+          code: 'play_failed',
+          message: 'Unable to prepare piano playback.',
+        );
+      }
+      return null;
+    });
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    final future = piano.playScore(
+      PlaybackPlan(ScoreEditor(fixture), 120),
+      onFinished: () {},
+    );
+    await tester.pump();
+    expect(await future, isFalse);
+    expect(errors, ['Unable to prepare piano playback.']);
     expect(calls.where((call) => call.method == 'playScore'), isEmpty);
     piano.dispose();
   });
