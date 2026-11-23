@@ -47,6 +47,35 @@ void main() {
     expect(secondOffsets(chord, stemUp: false), [true, false]);
   });
 
+  testWidgets('double dots are drawn for both notes and rests', (tester) async {
+    int paragraphs(int duration, {required bool rest}) {
+      final score = Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(events: [event(0, duration, rest: rest)]),
+        ],
+      );
+      final canvas = TestRecordingCanvas();
+      ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      return canvas.invocations
+          .where((call) => call.invocation.memberName == #drawParagraph)
+          .length;
+    }
+
+    for (final rest in [false, true]) {
+      final plain = paragraphs(960, rest: rest);
+      expect(paragraphs(1440, rest: rest), plain + 1);
+      expect(paragraphs(1680, rest: rest), plain + 2);
+    }
+    expect(beamCount(840), 1);
+    expect(beamCount(420), 2);
+  });
+
   test('4/4 groups consecutive events within each beat and voice', () {
     final events = [
       event(0, 480),

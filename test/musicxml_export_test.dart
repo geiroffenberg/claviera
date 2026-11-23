@@ -12,6 +12,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('exports both dots and exact durations for notes and rests', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.quarter.duration(dots: 2),
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.sixteenth.duration(dots: 2),
+    );
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Dots')),
+    );
+    final notes = xml.findAllElements('measure').first.findElements('note').toList();
+    expect(notes.map((note) => note.getElement('duration')!.innerText), [
+      '1680',
+      '420',
+    ]);
+    expect(notes.map((note) => note.getElement('type')!.innerText), [
+      'quarter',
+      '16th',
+    ]);
+    expect(notes.map((note) => note.findElements('dot').length), [2, 2]);
+    expect(notes.last.getElement('rest'), isNotNull);
+  });
+
   test('exports articulations once on a chord attack alongside ties', () {
     final editor = ScoreEditor(blankScore);
     editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);

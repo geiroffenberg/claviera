@@ -49,6 +49,28 @@ class FailingStore extends MemoryStore {
 }
 
 void main() {
+  test('double-dotted events survive project round-trip', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.quarter.duration(dots: 2),
+      pitch: fSharp,
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.sixteenth.duration(dots: 2),
+    );
+    final encoded = ProjectCodec.encode(Project(name: 'Dots', tempo: 120, editor: editor));
+    final restored = ProjectCodec.decode(encoded);
+    expect(ProjectCodec.encode(restored), encoded);
+    expect(
+      restored.editor.score.measures.first.events.map((event) => event.durationTicks),
+      [1680, 420],
+    );
+  });
+
   test('articulations round-trip with other project features and reject invalid marks', () {
     final editor = ScoreEditor(blankScore);
     final id = editor.append(

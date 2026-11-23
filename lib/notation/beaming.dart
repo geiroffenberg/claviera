@@ -3,13 +3,7 @@ import '../models/score.dart';
 bool stemPointsUp(Voice voice) => voice == Voice.v1 || voice == Voice.v3;
 
 int baseDuration(int duration) {
-  for (final value in NoteValue.values) {
-    if (value != NoteValue.sixtyFourth &&
-        value.duration(dotted: true) == duration) {
-      return value.ticks;
-    }
-  }
-  return duration;
+  return notationForDuration(duration)?.value.ticks ?? duration;
 }
 
 int beamCount(int duration) {

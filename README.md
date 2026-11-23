@@ -14,8 +14,9 @@ The app requests both landscape orientations at startup.
 
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls
-  don't fit on screen. Values run from whole through 64th; dots are
-  available through the 32nd.
+  don't fit on screen. Values run from whole through 64th. Tap **Dot** to
+  cycle between no dot, one dot and two dots; double dots are available through
+  the 16th and single dots through the 32nd.
 - Tap the clefs or time signature at the beginning of the staff to open
   **Score settings**. Choose the initial key signature and time signature.
   Key signatures change the sounding pitch of existing notes

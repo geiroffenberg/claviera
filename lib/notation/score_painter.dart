@@ -632,7 +632,7 @@ class ScorePainter extends CustomPainter {
         : const Color(0xff252c2a);
     final duration = event.durationTicks;
     final base = baseDuration(duration);
-    final dotted = base != duration;
+    final dots = notationForDuration(duration)?.dots ?? 0;
     if (event.isRest) {
       final glyph = switch (base) {
         >= 3840 => '\uE4E3',
@@ -644,8 +644,14 @@ class ScorePainter extends CustomPainter {
         _ => '\uE4E9',
       };
       _glyph(canvas, glyph, x, top + 2 * _s, color: color);
-      if (dotted) {
-        _glyph(canvas, '\uE1E7', x + 1.6 * _s, top + 2 * _s, color: color);
+      for (var i = 0; i < dots; i++) {
+        _glyph(
+          canvas,
+          '\uE1E7',
+          x + (1.6 + i * .6) * _s,
+          top + 2 * _s,
+          color: color,
+        );
       }
       return;
     }
@@ -698,8 +704,14 @@ class ScorePainter extends CustomPainter {
       if (accidental != null) {
         _glyph(canvas, accidental, headX - 1.5 * _s, y, color: color);
       }
-      if (dotted) {
-        _glyph(canvas, '\uE1E7', headX + 1.6 * _s, y - .5 * _s, color: color);
+      for (var dot = 0; dot < dots; dot++) {
+        _glyph(
+          canvas,
+          '\uE1E7',
+          headX + (1.6 + dot * .6) * _s,
+          y - .5 * _s,
+          color: color,
+        );
       }
     }
     final glyphs = articulationGlyphs(event.articulations, above: !up);

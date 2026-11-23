@@ -77,6 +77,22 @@ void main() {
     expect(() => PlaybackPlan(editor, 0), throwsArgumentError);
   });
 
+  test('double-dotted notes play for their exact duration', () {
+    final editor = ScoreEditor(
+      const Score(title: '', beatsPerMeasure: 4, beatUnit: 4, measures: [Measure()]),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.quarter.duration(dots: 2),
+      pitch: c,
+    );
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.single.endMs, 875);
+    expect(plan.frameAt(874)!.segments, hasLength(1));
+    expect(plan.frameAt(875), isNull);
+  });
+
   test('articulations change sounding duration, highlights and accent volume', () {
     final editor = ScoreEditor(fixture);
     final chord = editor.eventsFor(Voice.v1).first.id;

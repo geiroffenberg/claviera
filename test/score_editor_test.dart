@@ -12,6 +12,36 @@ const c = Pitch(diatonicStep: 28, midiNote: 60);
 const d = Pitch(diatonicStep: 29, midiNote: 62);
 
 void main() {
+  test('double-dotted values keep exact timing and split correctly at barlines', () {
+    expect(
+      [
+        NoteValue.whole,
+        NoteValue.half,
+        NoteValue.quarter,
+        NoteValue.eighth,
+        NoteValue.sixteenth,
+      ].map((value) => value.duration(dots: 2)),
+      [6720, 3360, 1680, 840, 420],
+    );
+    expect(() => NoteValue.thirtySecond.duration(dots: 2), throwsArgumentError);
+    final editor = ScoreEditor(emptyScore);
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.quarter.duration(dots: 2),
+      pitch: c,
+    );
+    final segments = editor.score.measures
+        .expand((measure) => measure.events)
+        .where((event) => event.eventId == id)
+        .toList();
+    expect(segments.map((event) => event.durationTicks), [960, 720]);
+    expect(segments.first.tieToNext, isTrue);
+    expect(segments.last.tieFromPrevious, isTrue);
+    expect(editor.eventById(id)!.duration, 1680);
+  });
+
   test(
     'articulations belong to the chord attack and survive edits and undo',
     () {
@@ -80,10 +110,7 @@ void main() {
     expect(editor.nextTick(Voice.v1), 180);
     expect(editor.eventsFor(Voice.v1).last.isRest, isTrue);
     expect(editor.eventsFor(Voice.v2).single.start, 0);
-    expect(
-      () => NoteValue.sixtyFourth.duration(dotted: true),
-      throwsArgumentError,
-    );
+    expect(() => NoteValue.sixtyFourth.duration(dots: 1), throwsArgumentError);
   });
 
   test(

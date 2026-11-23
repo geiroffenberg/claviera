@@ -587,10 +587,9 @@ class ScoreEditor {
   }
 
   List<int> get _notationValues => <int>[
-    for (final value in NoteValue.values) ...[
-      if (value != NoteValue.sixtyFourth) value.duration(dotted: true),
-      value.ticks,
-    ],
+    for (final value in NoteValue.values)
+      for (var dots = 0; dots <= value.maxDots; dots++)
+        value.duration(dots: dots),
   ]..sort((a, b) => b.compareTo(a));
 
   void _normalizeRests() {

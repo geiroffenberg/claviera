@@ -33,23 +33,11 @@ class MusicXmlExport {
 
     void note(NotationEvent event, Pitch? pitch, bool chord) {
       final duration = event.durationTicks;
-      NoteValue? value;
-      var dotted = false;
-      for (final candidate in NoteValue.values) {
-        if (candidate.ticks == duration) {
-          value = candidate;
-          break;
-        }
-        if (candidate != NoteValue.sixtyFourth &&
-            candidate.duration(dotted: true) == duration) {
-          value = candidate;
-          dotted = true;
-          break;
-        }
-      }
-      if (value == null) {
+      final notation = notationForDuration(duration);
+      if (notation == null) {
         throw StateError('Unsupported MusicXML note duration: $duration.');
       }
+      final value = notation.value;
       xml.element(
         'note',
         nest: () {
@@ -80,7 +68,7 @@ class MusicXmlExport {
             xml.element('tie', attributes: {'type': 'start'});
           }
           text('voice', event.voice.index + 1);
-          text('type', switch (value!) {
+          text('type', switch (value) {
             NoteValue.whole => 'whole',
             NoteValue.half => 'half',
             NoteValue.quarter => 'quarter',
@@ -89,7 +77,9 @@ class MusicXmlExport {
             NoteValue.thirtySecond => '32nd',
             NoteValue.sixtyFourth => '64th',
           });
-          if (dotted) xml.element('dot');
+          for (var i = 0; i < notation.dots; i++) {
+            xml.element('dot');
+          }
           if (pitch != null &&
               pitch.accidental != Accidental.none &&
               !event.tieFromPrevious) {

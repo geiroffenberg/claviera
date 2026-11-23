@@ -40,7 +40,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   NoteValue noteValue = NoteValue.quarter;
   WorkspaceMode mode = WorkspaceMode.write;
   bool rest = false;
-  bool dotted = false;
+  int dots = 0;
   bool chordStack = false;
   int? selectedId;
   int selectedMeasure = 0;
@@ -66,7 +66,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   int tempo = 120;
 
   VoiceEvent? get selected => editor.eventById(selectedId);
-  int get duration => noteValue.duration(dotted: dotted);
+  int get duration => noteValue.duration(dots: dots);
   int get entryMeasure {
     final event = selected;
     if (event != null &&
@@ -867,18 +867,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
     replaceSelectedRest = event?.isRest ?? false;
     if (event != null) {
-      for (final value in NoteValue.values) {
-        if (event.duration == value.ticks) {
-          noteValue = value;
-          dotted = false;
-          break;
-        }
-        if (value != NoteValue.sixtyFourth &&
-            event.duration == value.duration(dotted: true)) {
-          noteValue = value;
-          dotted = true;
-          break;
-        }
+      final notation = notationForDuration(event.duration);
+      if (notation != null) {
+        noteValue = notation.value;
+        dots = notation.dots;
       }
     }
   });
@@ -1408,17 +1400,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     });
   }
 
-  void _changeDuration(NoteValue value, bool dot) {
+  void _changeDuration(NoteValue value, int dotCount) {
     if (mode == WorkspaceMode.edit && selected != null) {
       _perform(() {
-        editor.resize(selectedId!, value.duration(dotted: dot));
+        editor.resize(selectedId!, value.duration(dots: dotCount));
         noteValue = value;
-        dotted = dot;
+        dots = dotCount;
       });
     } else {
       setState(() {
         noteValue = value;
-        dotted = dot;
+        dots = dotCount;
       });
     }
   }
@@ -1542,13 +1534,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           ),
                           for (final value in NoteValue.values)
                             _durationButton(value),
-                          _button(
+                          _textButton(
+                            dots == 2 ? '\u2022 \u2022' : '\u2022',
                             'Dot',
-                            Icons.circle,
-                            noteValue == NoteValue.sixtyFourth
+                            noteValue.maxDots == 0
                                 ? null
-                                : () => _changeDuration(noteValue, !dotted),
-                            selected: dotted,
+                                : () => _changeDuration(
+                                    noteValue,
+                                    (dots + 1) % (noteValue.maxDots + 1),
+                                  ),
+                            selected: dots > 0,
+                            semanticValue: switch (dots) {
+                              1 => 'One dot',
+                              2 => 'Two dots',
+                              _ => 'No dots',
+                            },
                           ),
                           const Divider(),
                           _button(
@@ -1557,14 +1557,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             () => setState(() => chordStack = !chordStack),
                             selected: chordStack,
                           ),
-                          _button(
+                          _textButton(
+                            '\uE4B0',
                             'Articulations',
-                            Icons.auto_awesome,
                             event == null || event.isRest
                                 ? null
                                 : () => _articulationPalette(event.id),
                             selected:
                                 event != null && event.articulations.isNotEmpty,
+                            music: true,
                           ),
                         ]),
                       ),
@@ -1864,10 +1865,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     VoidCallback? onPressed, {
     bool selected = false,
     bool music = false,
+    String? semanticValue,
   }) => Tooltip(
     message: label,
     child: Semantics(
       label: label,
+      value: semanticValue,
       button: true,
       selected: selected,
       child: ExcludeSemantics(
@@ -1916,7 +1919,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       '${value.name} ${rest ? 'rest' : 'note'}',
       () => _changeDuration(
         value,
-        value == NoteValue.sixtyFourth ? false : dotted,
+        dots.clamp(0, value.maxDots),
       ),
       selected: value == noteValue,
       music: true,

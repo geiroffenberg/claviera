@@ -54,6 +54,18 @@ List<MidiMessage> parseMidi(Uint8List bytes) {
 }
 
 void main() {
+  test('MIDI retains double-dotted note durations', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: NoteValue.eighth.duration(dots: 2),
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    expect(messages.where((message) => message.status & 0xf0 == 0x80).single.tick, 840);
+  });
+
   test('MIDI applies articulations to every pitch without shifting later notes', () {
     final editor = ScoreEditor(blankScore);
     const c = Pitch(diatonicStep: 28, midiNote: 60);

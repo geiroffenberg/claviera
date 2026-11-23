@@ -92,12 +92,33 @@ enum NoteValue {
   const NoteValue(this.ticks);
   final int ticks;
 
-  int duration({bool dotted = false}) {
-    if (dotted && this == NoteValue.sixtyFourth) {
-      throw ArgumentError('Dotted 64th notes are not supported.');
+  int get maxDots => switch (this) {
+    NoteValue.sixtyFourth => 0,
+    NoteValue.thirtySecond => 1,
+    _ => 2,
+  };
+
+  int duration({int dots = 0}) {
+    if (dots < 0 || dots > maxDots) {
+      throw ArgumentError.value(dots, 'dots', 'Unsupported dot count.');
     }
-    return dotted ? ticks * 3 ~/ 2 : ticks;
+    return ticks * switch (dots) {
+      0 => 4,
+      1 => 6,
+      _ => 7,
+    } ~/ 4;
   }
+}
+
+({NoteValue value, int dots})? notationForDuration(int duration) {
+  for (final value in NoteValue.values) {
+    for (var dots = 0; dots <= value.maxDots; dots++) {
+      if (value.duration(dots: dots) == duration) {
+        return (value: value, dots: dots);
+      }
+    }
+  }
+  return null;
 }
 
 /// C0 = 0, D0 = 1, ... C4 = 28. Accidentals do not change this position.

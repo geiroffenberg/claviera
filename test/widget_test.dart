@@ -7,6 +7,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('dot button cycles note values and respects short-note limits', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final dot = find.byTooltip('Dot');
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    await tester.tap(dot);
+    await tester.tap(dot);
+    await tester.pump();
+    expect(find.text('\u2022 \u2022'), findsOneWidget);
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    expect(viewport().selectedEvent!.durationTicks, 1680);
+    expect(viewport().cursorTick, 1680);
+    await tester.tap(find.byTooltip('thirtySecond note'));
+    await tester.pump();
+    expect(find.text('\u2022 \u2022'), findsNothing);
+    await tester.tap(find.byTooltip('sixtyFourth note'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextButton>(
+            find.descendant(of: dot, matching: find.byType(TextButton)),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    expect(find.text('\u2022 \u2022'), findsOneWidget);
+    await tester.tap(dot);
+    await tester.pump();
+    expect(viewport().selectedEvent!.durationTicks, 960);
+    await tester.tap(dot);
+    await tester.pump();
+    expect(viewport().selectedEvent!.durationTicks, 1440);
+    await tester.tap(dot);
+    await tester.pump();
+    expect(viewport().selectedEvent!.durationTicks, 1680);
+  });
+
   testWidgets('mode toggles are grouped at the top of the left rail', (
     tester,
   ) async {
