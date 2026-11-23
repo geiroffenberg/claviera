@@ -38,6 +38,9 @@ class MainActivity : FlutterActivity() {
     private val midiRequest = 7464
     private var midiResult: MethodChannel.Result? = null
     private var midiBytes: ByteArray? = null
+    private val musicXmlRequest = 7465
+    private var musicXmlResult: MethodChannel.Result? = null
+    private var musicXmlBytes: ByteArray? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -102,6 +105,34 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/musicxml")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "save") {
+                    result.notImplemented()
+                } else if (musicXmlResult != null) {
+                    result.error("busy", "A MusicXML export is already in progress.", null)
+                } else {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val name = call.argument<String>("name")
+                    if (bytes == null || bytes.isEmpty() || name.isNullOrBlank()) {
+                        result.error("invalid_musicxml", "MusicXML data and a name are required.", null)
+                    } else {
+                        musicXmlBytes = bytes
+                        musicXmlResult = result
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("application/vnd.recordare.musicxml+xml")
+                            .putExtra(Intent.EXTRA_TITLE, name)
+                        try {
+                            startActivityForResult(intent, musicXmlRequest)
+                        } catch (error: android.content.ActivityNotFoundException) {
+                            musicXmlBytes = null
+                            musicXmlResult = null
+                            result.error("unavailable", "No app is available to save the MusicXML file.", null)
+                        }
+                    }
+                }
+            }
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/piano_preview")
         channel!!.setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -148,6 +179,32 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Android activity result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == musicXmlRequest) {
+            val response = musicXmlResult ?: return
+            val bytes = musicXmlBytes
+            musicXmlResult = null
+            musicXmlBytes = null
+            if (resultCode != Activity.RESULT_OK) {
+                response.success(false)
+                return
+            }
+            val uri = data?.data
+            if (uri == null || bytes == null) {
+                response.error("save_failed", "The MusicXML destination is unavailable.", null)
+                return
+            }
+            try {
+                val output = contentResolver.openOutputStream(uri)
+                    ?: throw IOException("Could not open the selected destination.")
+                output.use { it.write(bytes) }
+                response.success(true)
+            } catch (error: IOException) {
+                response.error("save_failed", "Could not save MusicXML: ${error.message}", null)
+            } catch (error: SecurityException) {
+                response.error("save_failed", "Cannot access MusicXML destination: ${error.message}", null)
+            }
+            return
+        }
         if (requestCode == midiRequest) {
             val response = midiResult ?: return
             val bytes = midiBytes

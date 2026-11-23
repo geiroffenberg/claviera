@@ -83,6 +83,11 @@ The app requests both landscape orientations at startup.
   MIDI exports use piano sounds and are not editable Claviera projects.
   Because the editor stores key signatures but not major/minor mode, MIDI key
   signature metadata is marked major. Pitches are unchanged.
+- Choose **Export MusicXML** to save a `.musicxml` score using Android's file
+  picker. It contains both staves, voices, notes, rests, chords, ties, tempo,
+  key and time changes, and repeat signs. Unlike MIDI, repeat passages remain
+  written as repeats rather than being expanded. The export can be opened in
+  compatible notation software, but is not a Claviera project file.
 - The menu contains **New score**, **Open project**, **Save**, **Save as** and
   **Rename**. The first save asks for a name; Save updates that project, while
   Save as creates a separate copy. New and Open ask whether to save or discard
@@ -132,6 +137,7 @@ lib/
     score_painter.dart         SMuFL grand-staff rendering
     print_layout.dart          Paginated score rendering for PDF export
     beaming.dart               Voice stem directions and rhythmic beam grouping
+    musicxml_export.dart       MusicXML score encoding
   ui/
     workspace_screen.dart      Rails and editing interactions
     workspace_menu.dart        Redo and future actions
@@ -144,7 +150,7 @@ editor; rendered segments use measure-relative ticks. A chord is one logical
 event with multiple pitches sharing its duration. Pitch positions use C0 = 0,
 D0 = 1, …, C4 = 28, independent of accidentals.
 
-MusicXML export, ads, and clef changes per bar are not implemented. The remaining disabled menu
+Ads and clef changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
 

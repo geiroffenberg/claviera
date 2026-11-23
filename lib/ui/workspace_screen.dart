@@ -10,6 +10,7 @@ import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
 import '../models/score.dart';
 import '../notation/score_painter.dart';
+import '../notation/musicxml_export.dart';
 import '../notation/print_layout.dart';
 import '../notation/score_viewport.dart';
 import '../storage/projects.dart';
@@ -53,6 +54,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool saving = false;
   bool exportingPdf = false;
   bool exportingMidi = false;
+  bool exportingMusicXml = false;
   int playbackRevision = 0;
   int tempo = 120;
 
@@ -74,6 +76,40 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Project get project =>
       Project(name: projectName, tempo: tempo, editor: editor);
   bool get dirty => ProjectCodec.encode(project) != savedState;
+
+  Future<void> _exportMusicXml() async {
+    if (exportingMusicXml) return;
+    setState(() => exportingMusicXml = true);
+    try {
+      final bytes = MusicXmlExport.encode(editor, tempo, projectName);
+      final safeName = projectName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final saved = await const MethodChannel('claviera/musicxml')
+          .invokeMethod<bool>('save', {
+            'name': '$safeName.musicxml',
+            'bytes': bytes,
+          });
+      if (mounted && saved == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('MusicXML saved.')));
+      }
+    } on PlatformException catch (error) {
+      _musicXmlError(error.message ?? error.code);
+    } on MissingPluginException {
+      _musicXmlError('MusicXML export is available on Android only.');
+    } on StateError catch (error) {
+      _musicXmlError(error.message);
+    } finally {
+      if (mounted) setState(() => exportingMusicXml = false);
+    }
+  }
+
+  void _musicXmlError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('MusicXML export error: $error')));
+  }
 
   Future<void> _exportMidi() async {
     if (exportingMidi) return;
@@ -1141,7 +1177,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         }
       },
       child: IgnorePointer(
-        ignoring: saving || exportingPdf || exportingMidi,
+        ignoring: saving || exportingPdf || exportingMidi || exportingMusicXml,
         child: Scaffold(
           body: SafeArea(
             child: Column(
@@ -1416,6 +1452,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onRename: () => _saveProject(rename: true),
                               onExportPdf: _exportPdf,
                               onExportMidi: _exportMidi,
+                              onExportMusicXml: _exportMusicXml,
                               onRedo: () => setState(() {
                                 editor.redo();
                                 selectedMeasure = selectedMeasure.clamp(
