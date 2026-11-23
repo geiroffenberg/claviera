@@ -12,6 +12,8 @@ void showWorkspaceMenu(
   required VoidCallback onExportPdf,
   required VoidCallback onExportMidi,
   required VoidCallback onExportMusicXml,
+  required VoidCallback onBackup,
+  required VoidCallback onRestoreBackup,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -41,6 +43,8 @@ void showWorkspaceMenu(
             (Icons.save_outlined, 'Save', onSave),
             (Icons.save_as_outlined, 'Save as', onSaveAs),
             (Icons.drive_file_rename_outline, 'Rename', onRename),
+            (Icons.backup_outlined, 'Back up project', onBackup),
+            (Icons.restore, 'Restore project backup', onRestoreBackup),
             (Icons.picture_as_pdf_outlined, 'Export PDF', onExportPdf),
             (Icons.piano, 'Export MIDI', onExportMidi),
             (Icons.music_note, 'Export MusicXML', onExportMusicXml),

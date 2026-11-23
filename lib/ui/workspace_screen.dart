@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -59,6 +61,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool exportingPdf = false;
   bool exportingMidi = false;
   bool exportingMusicXml = false;
+  bool transferringProject = false;
+  bool checkingRecovery = false;
+  bool recoveryAvailable = false;
+  Future<void> recoveryWrites = Future.value();
   int playbackRevision = 0;
   late final Ticker playbackTicker;
   PlaybackPlan? playbackPlan;
@@ -179,12 +185,71 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
   }
 
+  Future<void> _backupProject() async {
+    if (transferringProject) return;
+    final contents = ProjectCodec.encode(project);
+    final safeName = projectName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    setState(() => transferringProject = true);
+    try {
+      final saved = await const MethodChannel('claviera/projects')
+          .invokeMethod<bool>('backup', {
+            'name': '$safeName.claviera',
+            'bytes': Uint8List.fromList(utf8.encode(contents)),
+          });
+      if (mounted && saved == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Project backup saved.')));
+      }
+    } on PlatformException catch (error) {
+      _storageError(error.message ?? error.code);
+    } on MissingPluginException {
+      _storageError('Project backup is available on Android only.');
+    } finally {
+      if (mounted) setState(() => transferringProject = false);
+    }
+  }
+
+  Future<void> _restoreProjectBackup() async {
+    if (transferringProject) return;
+    setState(() => transferringProject = true);
+    try {
+      final bytes = await const MethodChannel(
+        'claviera/projects',
+      ).invokeMethod<Uint8List>('restore');
+      if (bytes == null || !mounted) return;
+      final restored = ProjectCodec.decode(utf8.decode(bytes));
+      setState(() => transferringProject = false);
+      if (!await _confirmDiscard() || !mounted) return;
+      setState(() => transferringProject = true);
+      final id = await projectStore.save(restored);
+      if (!mounted) return;
+      _replaceProject(restored, id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Project backup restored as a new project.'),
+        ),
+      );
+    } on PlatformException catch (error) {
+      _storageError(error.message ?? error.code);
+    } on MissingPluginException {
+      _storageError('Project restore is available on Android only.');
+    } on FileSystemException catch (error) {
+      _storageError(error);
+    } on FormatException catch (error) {
+      _storageError('Invalid project backup: ${error.message}');
+    } finally {
+      if (mounted) setState(() => transferringProject = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     playbackTicker = createTicker(_updatePlayback);
     projectStore = widget.projectStore ?? ProjectStore();
     savedState = ProjectCodec.encode(project);
+    checkingRecovery = Platform.isAndroid || widget.projectStore != null;
     WidgetsBinding.instance.addObserver(this);
     piano =
         widget.pianoPreview ??
@@ -197,8 +262,97 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           },
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) piano.warmUp();
+      if (mounted) {
+        piano.warmUp();
+        if (checkingRecovery) _initializeRecovery();
+      }
     });
+  }
+
+  Future<void> _initializeRecovery() async {
+    try {
+      final draft = await projectStore.readRecovery();
+      if (!mounted) return;
+      if (draft != null) {
+        final restore = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => PopScope(
+            canPop: false,
+            child: AlertDialog(
+              title: const Text('Recover unsaved work?'),
+              content: Text(
+                'A recovery draft for "${ProjectCodec.decode(draft.contents).name}" was found.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Discard draft'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Restore draft'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (!mounted) return;
+        if (restore == null) return;
+        if (restore) {
+          _replaceProject(ProjectCodec.decode(draft.contents), draft.projectId);
+          savedState = draft.savedState;
+        } else {
+          await projectStore.clearRecovery();
+        }
+      }
+      if (mounted) setState(() => recoveryAvailable = true);
+    } on FileSystemException catch (error) {
+      _storageError('Recovery unavailable: $error');
+    } on PlatformException catch (error) {
+      _storageError('Recovery unavailable: ${error.message ?? error.code}');
+    } on MissingPluginException {
+      _storageError('Recovery storage is unavailable.');
+    } on FormatException catch (error) {
+      _storageError('Recovery draft could not be read: ${error.message}');
+    } finally {
+      if (mounted) setState(() => checkingRecovery = false);
+    }
+  }
+
+  Future<bool> _queueRecovery({bool discard = false}) {
+    if (!recoveryAvailable) return Future.value(false);
+    final contents = ProjectCodec.encode(project);
+    final draft = discard || contents == savedState
+        ? null
+        : RecoveryDraft(
+            contents: contents,
+            savedState: savedState,
+            projectId: projectId,
+          );
+    final result = Completer<bool>();
+    recoveryWrites = recoveryWrites.then((_) async {
+      try {
+        if (draft == null) {
+          await projectStore.clearRecovery();
+        } else {
+          await projectStore.writeRecovery(draft);
+        }
+        result.complete(true);
+      } on FileSystemException catch (error) {
+        _storageError('Recovery could not be saved: $error');
+        result.complete(false);
+      } on PlatformException catch (error) {
+        _storageError(
+          'Recovery could not be saved: ${error.message ?? error.code}',
+        );
+        result.complete(false);
+      } on MissingPluginException {
+        _storageError('Recovery storage is unavailable.');
+        result.complete(false);
+      }
+    });
+    return result.future;
   }
 
   void _storageError(Object error) {
@@ -272,6 +426,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         projectName = name;
         savedState = encoded;
       });
+      _queueRecovery();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Project saved.')));
@@ -344,6 +499,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       gestureStart = null;
       savedState = ProjectCodec.encode(project);
     });
+    _queueRecovery();
   }
 
   Future<void> _newProject() async {
@@ -414,6 +570,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      _queueRecovery();
       piano.stop();
       if (playing) {
         _stopScore();
@@ -579,6 +736,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                     );
                   }
                   setState(() {});
+                  _queueRecovery();
                   Navigator.pop(context);
                 } on EditException catch (exception) {
                   update(() => error = exception.message);
@@ -691,7 +849,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         ],
       ),
     );
-    if (mounted && value != null) setState(() => tempo = value);
+    if (mounted && value != null) {
+      setState(() => tempo = value);
+      _queueRecovery();
+    }
   }
 
   Future<void> _barSettings(int measure) async {
@@ -849,6 +1010,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   void _perform(void Function() operation) {
     try {
       setState(operation);
+      _queueRecovery();
     } on EditException catch (error) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -1533,14 +1695,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         : (preview != null ? event?.start : null);
 
     return PopScope(
-      canPop: !saving && !dirty,
+      canPop:
+          !checkingRecovery &&
+          !saving &&
+          !transferringProject &&
+          !recoveryAvailable &&
+          !dirty,
       onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop && !saving && await _confirmDiscard() && mounted) {
-          await SystemNavigator.pop();
+        if (!didPop &&
+            !checkingRecovery &&
+            !saving &&
+            !transferringProject &&
+            await _confirmDiscard() &&
+            mounted) {
+          if (!recoveryAvailable || await _queueRecovery(discard: true)) {
+            await SystemNavigator.pop();
+          }
         }
       },
       child: IgnorePointer(
-        ignoring: saving || exportingPdf || exportingMidi || exportingMusicXml,
+        ignoring:
+            checkingRecovery ||
+            saving ||
+            transferringProject ||
+            exportingPdf ||
+            exportingMidi ||
+            exportingMusicXml,
         child: Scaffold(
           body: SafeArea(
             child: Column(
@@ -1821,7 +2001,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             'Undo',
                             Icons.undo,
                             editor.canUndo
-                                ? () => setState(() {
+                                ? () => _perform(() {
                                     editor.undo();
                                     selectedMeasure = selectedMeasure.clamp(
                                       0,
@@ -1862,7 +2042,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onExportPdf: _exportPdf,
                               onExportMidi: _exportMidi,
                               onExportMusicXml: _exportMusicXml,
-                              onRedo: () => setState(() {
+                              onBackup: _backupProject,
+                              onRestoreBackup: _restoreProjectBackup,
+                              onRedo: () => _perform(() {
                                 editor.redo();
                                 selectedMeasure = selectedMeasure.clamp(
                                   0,

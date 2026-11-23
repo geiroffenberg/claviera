@@ -440,6 +440,18 @@ class StoredProject {
   final DateTime modified;
 }
 
+class RecoveryDraft {
+  const RecoveryDraft({
+    required this.contents,
+    required this.savedState,
+    required this.projectId,
+  });
+
+  final String contents;
+  final String savedState;
+  final String? projectId;
+}
+
 class ProjectStore {
   ProjectStore({Future<Directory> Function()? directory})
     : _directory = directory ?? _appDirectory;
@@ -457,6 +469,53 @@ class ProjectStore {
 
   Future<Directory> _root() async =>
       (await _directory()).create(recursive: true);
+
+  Future<RecoveryDraft?> readRecovery() async {
+    final file = File('${(await _root()).path}/recovery.draft');
+    if (!await file.exists()) return null;
+    final data = jsonDecode(await file.readAsString());
+    if (data is! Map<String, dynamic> ||
+        data['contents'] is! String ||
+        data['savedState'] is! String ||
+        (data['projectId'] != null && data['projectId'] is! String)) {
+      throw const FormatException('Invalid recovery draft.');
+    }
+    final contents = data['contents'] as String;
+    final savedState = data['savedState'] as String;
+    final id = data['projectId'] as String?;
+    ProjectCodec.decode(contents);
+    ProjectCodec.decode(savedState);
+    if (id != null) _validateId(id);
+    return RecoveryDraft(
+      contents: contents,
+      savedState: savedState,
+      projectId: id,
+    );
+  }
+
+  Future<void> writeRecovery(RecoveryDraft draft) async {
+    final root = await _root();
+    final file = File('${root.path}/recovery.draft');
+    final temp = File('${root.path}/recovery.tmp');
+    try {
+      await temp.writeAsString(
+        jsonEncode({
+          'contents': draft.contents,
+          'savedState': draft.savedState,
+          'projectId': draft.projectId,
+        }),
+        flush: true,
+      );
+      await temp.rename(file.path);
+    } finally {
+      if (await temp.exists()) await temp.delete();
+    }
+  }
+
+  Future<void> clearRecovery() async {
+    final file = File('${(await _root()).path}/recovery.draft');
+    if (await file.exists()) await file.delete();
+  }
 
   Future<List<StoredProject>> list() async {
     final root = await _root();

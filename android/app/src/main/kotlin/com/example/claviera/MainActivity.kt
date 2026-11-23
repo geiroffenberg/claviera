@@ -14,6 +14,7 @@ import android.os.SystemClock
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.pow
@@ -41,13 +42,51 @@ class MainActivity : FlutterActivity() {
     private val musicXmlRequest = 7465
     private var musicXmlResult: MethodChannel.Result? = null
     private var musicXmlBytes: ByteArray? = null
+    private val backupRequest = 7466
+    private val restoreRequest = 7467
+    private var projectTransferResult: MethodChannel.Result? = null
+    private var backupBytes: ByteArray? = null
+    private val maxBackupBytes = 10 * 1024 * 1024
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/projects")
             .setMethodCallHandler { call, result ->
-                if (call.method == "directory") result.success(filesDir.absolutePath)
-                else result.notImplemented()
+                when (call.method) {
+                    "directory" -> result.success(filesDir.absolutePath)
+                    "backup", "restore" -> {
+                        if (projectTransferResult != null) {
+                            result.error("busy", "A project transfer is already in progress.", null)
+                        } else {
+                            val isBackup = call.method == "backup"
+                            val bytes = if (isBackup) call.argument<ByteArray>("bytes") else null
+                            val name = if (isBackup) call.argument<String>("name") else null
+                            if (isBackup && (bytes == null || bytes.isEmpty() || name.isNullOrBlank())) {
+                                result.error("invalid_backup", "Project data and a name are required.", null)
+                            } else if (isBackup && bytes!!.size > maxBackupBytes) {
+                                result.error("invalid_backup", "Project backup exceeds the 10 MB limit.", null)
+                            } else {
+                                projectTransferResult = result
+                                backupBytes = bytes
+                                val intent = if (isBackup) {
+                                    Intent(Intent.ACTION_CREATE_DOCUMENT)
+                                        .setType("application/json")
+                                        .putExtra(Intent.EXTRA_TITLE, name)
+                                } else {
+                                    Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
+                                }.addCategory(Intent.CATEGORY_OPENABLE)
+                                try {
+                                    startActivityForResult(intent, if (isBackup) backupRequest else restoreRequest)
+                                } catch (error: android.content.ActivityNotFoundException) {
+                                    projectTransferResult = null
+                                    backupBytes = null
+                                    result.error("unavailable", "No file picker is available.", null)
+                                }
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "claviera/pdf")
             .setMethodCallHandler { call, result ->
@@ -181,6 +220,51 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Android activity result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == backupRequest || requestCode == restoreRequest) {
+            val response = projectTransferResult ?: return
+            val bytes = backupBytes
+            projectTransferResult = null
+            backupBytes = null
+            if (resultCode != Activity.RESULT_OK) {
+                response.success(if (requestCode == backupRequest) false else null)
+                return
+            }
+            val uri = data?.data
+            if (uri == null) {
+                response.error("transfer_failed", "The selected file is unavailable.", null)
+                return
+            }
+            try {
+                if (requestCode == backupRequest) {
+                    if (bytes == null) throw IOException("Project data is unavailable.")
+                    val output = contentResolver.openOutputStream(uri)
+                        ?: throw IOException("Could not open the selected destination.")
+                    output.use { it.write(bytes) }
+                    response.success(true)
+                } else {
+                    val input = contentResolver.openInputStream(uri)
+                        ?: throw IOException("Could not open the selected file.")
+                    val contents = ByteArrayOutputStream()
+                    input.use {
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = it.read(buffer)
+                            if (count < 0) break
+                            if (contents.size() + count > maxBackupBytes) {
+                                throw IOException("Project backup exceeds the 10 MB limit.")
+                            }
+                            contents.write(buffer, 0, count)
+                        }
+                    }
+                    response.success(contents.toByteArray())
+                }
+            } catch (error: IOException) {
+                response.error("transfer_failed", "Could not transfer project: ${error.message}", null)
+            } catch (error: SecurityException) {
+                response.error("transfer_failed", "Cannot access project file: ${error.message}", null)
+            }
+            return
+        }
         if (requestCode == musicXmlRequest) {
             val response = musicXmlResult ?: return
             val bytes = musicXmlBytes

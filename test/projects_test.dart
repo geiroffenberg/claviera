@@ -8,6 +8,7 @@ import 'package:claviera/storage/projects.dart';
 import 'package:claviera/ui/workspace_screen.dart';
 import 'package:claviera/notation/score_viewport.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const fSharp = Pitch(diatonicStep: 31, midiNote: 66);
@@ -19,6 +20,16 @@ const natural = Pitch(
 
 class MemoryStore extends ProjectStore {
   final files = <String, String>{};
+  RecoveryDraft? draft;
+
+  @override
+  Future<RecoveryDraft?> readRecovery() async => draft;
+
+  @override
+  Future<void> writeRecovery(RecoveryDraft value) async => draft = value;
+
+  @override
+  Future<void> clearRecovery() async => draft = null;
 
   @override
   Future<String> save(Project project, {String? id}) async {
@@ -45,6 +56,13 @@ class FailingStore extends MemoryStore {
   @override
   Future<String> save(Project project, {String? id}) async {
     throw const FileSystemException('Storage unavailable');
+  }
+}
+
+class FailingRecoveryStore extends MemoryStore {
+  @override
+  Future<void> writeRecovery(RecoveryDraft value) async {
+    throw const FileSystemException('Recovery storage unavailable');
   }
 }
 
@@ -321,6 +339,260 @@ void main() {
     expect(() => reopened.load('../bad'), throwsFormatException);
   });
 
+  test('recovery drafts persist separately from saved projects', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'claviera-recovery-test-',
+    );
+    addTearDown(() => dir.delete(recursive: true));
+    final store = ProjectStore(directory: () async => dir);
+    final original = ProjectCodec.encode(
+      Project(name: 'Sketch', tempo: 120, editor: ScoreEditor(blankScore)),
+    );
+    final edited = ProjectCodec.encode(
+      Project(name: 'Sketch', tempo: 90, editor: ScoreEditor(blankScore)),
+    );
+    await store.writeRecovery(
+      RecoveryDraft(contents: edited, savedState: original, projectId: '1-1'),
+    );
+    final recovered = await store.readRecovery();
+    expect(recovered!.contents, edited);
+    expect(recovered.savedState, original);
+    expect(recovered.projectId, '1-1');
+    expect(await store.list(), isEmpty);
+    await store.clearRecovery();
+    expect(await store.readRecovery(), isNull);
+  });
+
+  testWidgets('unsaved draft can be recovered without overwriting the save', (
+    tester,
+  ) async {
+    final store = MemoryStore();
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: store)),
+    );
+    await tester.pumpAndSettle();
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pumpAndSettle();
+    expect(store.draft, isNotNull);
+    expect(store.files, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: store)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Recover unsaved work?'), findsOneWidget);
+    await tester.tap(find.text('Restore draft'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events,
+      hasLength(1),
+    );
+    expect(store.files, isEmpty);
+    await tester.scrollUntilVisible(
+      find.byTooltip('Menu'),
+      250,
+      scrollable: find.descendant(
+        of: find.byType(ListView).last,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New score'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unsaved changes'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('backup contains the current unsaved score', (tester) async {
+    final store = MemoryStore();
+    Uint8List? bytes;
+    String? name;
+    const channel = MethodChannel('claviera/projects');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'backup') {
+        bytes = call.arguments['bytes'] as Uint8List;
+        name = call.arguments['name'] as String;
+        return true;
+      }
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: store)),
+    );
+    await tester.pumpAndSettle();
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Menu'),
+      250,
+      scrollable: find.descendant(
+        of: find.byType(ListView).last,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Back up project'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.text('Back up project'));
+    await tester.pumpAndSettle();
+    expect(name, 'Untitled score.claviera');
+    expect(
+      ProjectCodec.decode(utf8.decode(bytes!)).editor.eventsFor(Voice.v1),
+      hasLength(1),
+    );
+    expect(store.files, isEmpty);
+    expect(store.draft, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('discarding a recovery draft preserves the saved project', (
+    tester,
+  ) async {
+    final store = MemoryStore();
+    final original = Project(
+      name: 'Saved score',
+      tempo: 120,
+      editor: ScoreEditor(blankScore),
+    );
+    final id = await store.save(original);
+    final changed = Project(
+      name: original.name,
+      tempo: 90,
+      editor: ScoreEditor(blankScore),
+    );
+    store.draft = RecoveryDraft(
+      contents: ProjectCodec.encode(changed),
+      savedState: ProjectCodec.encode(original),
+      projectId: id,
+    );
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: store)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard draft'));
+    await tester.pumpAndSettle();
+    expect(store.draft, isNull);
+    expect((await store.load(id)).tempo, 120);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('recovery write errors are visible without losing the edit', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: FailingRecoveryStore())),
+    );
+    await tester.pumpAndSettle();
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    expect(find.textContaining('Recovery storage unavailable'), findsOneWidget);
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events,
+      hasLength(1),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('backup restore creates a copy and rejects invalid data', (
+    tester,
+  ) async {
+    final store = MemoryStore();
+    final contents = ProjectCodec.encode(
+      Project(name: 'Backed up', tempo: 88, editor: ScoreEditor(blankScore)),
+    );
+    var file = Uint8List.fromList(utf8.encode(contents));
+    final channel = const MethodChannel('claviera/projects');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'restore') return file;
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(projectStore: store)),
+    );
+    await tester.pumpAndSettle();
+    Future<void> restore() async {
+      await tester.scrollUntilVisible(
+        find.byTooltip('Menu'),
+        250,
+        scrollable: find.descendant(
+          of: find.byType(ListView).last,
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(find.byTooltip('Menu'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Restore project backup'),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(find.text('Restore project backup'));
+      await tester.pumpAndSettle();
+    }
+
+    await restore();
+    expect(store.files, hasLength(1));
+    expect(find.text('Backed up'), findsOneWidget);
+    file = Uint8List.fromList(utf8.encode('not a project'));
+    await restore();
+    expect(find.textContaining('Invalid project backup'), findsOneWidget);
+    expect(store.files, hasLength(1));
+    expect(find.text('Backed up'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('save, new, open and unsaved confirmation', (tester) async {
     final store = MemoryStore();
     await tester.binding.setSurfaceSize(const Size(1000, 700));
@@ -328,6 +600,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: WorkspaceScreen(projectStore: store)),
     );
+    await tester.pumpAndSettle();
     final canvas = find.byKey(const ValueKey('score-canvas'));
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
     await tester.pump();
@@ -353,8 +626,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sketch'), findsOneWidget);
     expect(await store.list(), hasLength(1));
+    expect(store.draft, isNull);
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 105));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(store.draft, isNotNull);
     await menu('New score');
     expect(find.text('Unsaved changes'), findsOneWidget);
     await tester.tap(find.text('Cancel'));
@@ -371,6 +646,7 @@ void main() {
     await menu('New score');
     await tester.tap(find.text('Discard'));
     await tester.pumpAndSettle();
+    expect(store.draft, isNull);
     expect(
       tester
           .widget<ScoreViewport>(find.byType(ScoreViewport))
@@ -405,6 +681,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: WorkspaceScreen(projectStore: store)),
     );
+    await tester.pumpAndSettle();
     Future<void> choose(String action, String name) async {
       await tester.scrollUntilVisible(
         find.byTooltip('Menu'),
@@ -442,6 +719,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: WorkspaceScreen(projectStore: FailingStore())),
     );
+    await tester.pumpAndSettle();
     final canvas = find.byKey(const ValueKey('score-canvas'));
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
     await tester.pump();

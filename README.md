@@ -149,8 +149,17 @@ The app requests both landscape orientations at startup.
   Save as creates a separate copy. New and Open ask whether to save or discard
   unsaved changes. Android Back also warns about unsaved changes. Project files
   are stored privately by the app and can be removed when the app is
-  uninstalled or its data is cleared. Save manually; sudden process termination
-  or force-closing the app can lose unsaved changes.
+  uninstalled or its data is cleared.
+- Unsaved changes are also written to a separate local recovery draft. When the
+  app reopens, choose whether to restore or discard that draft. Recovery does
+  not overwrite a saved project; use Save to keep the restored work. Continue
+  to save regularly: a sudden termination may occur before the latest draft
+  write finishes, and the draft is also lost if app data is removed.
+- Use **Back up project** to save an editable `.claviera` file for the current
+  score, including unsaved edits, to a location outside the app. **Restore
+  project backup** imports the selected file as a new project without
+  overwriting an existing one. Keep backups in a safe location outside the
+  device if you want protection from device loss.
 
 Each voice advances independently in each bar. Editing leaves later notes in
 place: gaps before later events **in the same bar** are filled with generated
