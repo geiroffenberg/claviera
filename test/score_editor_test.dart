@@ -12,6 +12,60 @@ const c = Pitch(diatonicStep: 28, midiNote: 60);
 const d = Pitch(diatonicStep: 29, midiNote: 62);
 
 void main() {
+  test(
+    'articulations belong to the chord attack and survive edits and undo',
+    () {
+      final editor = ScoreEditor(emptyScore);
+      editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      final restId = editor.eventsFor(Voice.v1).first.id;
+      expect(
+        () => editor.setArticulations(restId, {Articulation.accent}),
+        throwsA(isA<EditException>()),
+      );
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 1920,
+        pitch: c,
+      );
+      editor.addPitch(id, d);
+      final marks = {
+        Articulation.staccato,
+        Articulation.tenuto,
+        Articulation.accent,
+      };
+      editor.setArticulations(id, marks);
+      marks.clear();
+      expect(editor.eventById(id)!.articulations, {
+        Articulation.staccato,
+        Articulation.tenuto,
+        Articulation.accent,
+      });
+      final segments = editor.score.measures
+          .expand((m) => m.events)
+          .where((e) => e.eventId == id)
+          .toList();
+      expect(segments.first.articulations, editor.eventById(id)!.articulations);
+      expect(segments.last.articulations, isEmpty);
+      editor.undo();
+      expect(editor.eventById(id)!.articulations, isEmpty);
+      editor.redo();
+      editor.delete(id, pitchIndex: 1);
+      expect(editor.eventById(id)!.articulations, isNotEmpty);
+      editor.delete(id);
+      expect(editor.eventById(id)?.articulations ?? {}, isEmpty);
+      editor.undo();
+      expect(editor.eventById(id)!.articulations, isNotEmpty);
+      expect(
+        () => editor.setArticulations(id, {
+          Articulation.staccatissimo,
+          Articulation.tenuto,
+        }),
+        throwsA(isA<EditException>()),
+      );
+    },
+  );
+
   test('voices append independently with 32nd and 64th durations', () {
     final editor = ScoreEditor(emptyScore);
     final first = editor.append(

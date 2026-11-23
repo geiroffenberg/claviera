@@ -22,8 +22,15 @@ class Project {
 class ProjectCodec {
   static String encode(Project project) {
     final score = project.editor.score;
+    final hasArticulations = Voice.values.any(
+      (voice) => project.editor.eventsFor(voice).any(
+        (event) => event.articulations.isNotEmpty,
+      ),
+    );
     return jsonEncode({
-      'version': project.editor.hairpins.isNotEmpty
+      'version': hasArticulations
+          ? 7
+          : project.editor.hairpins.isNotEmpty
           ? 6
           : project.editor.dynamicChanges.isNotEmpty
           ? 5
@@ -98,6 +105,11 @@ class ProjectCodec {
                 'duration': event.duration,
                 'voice': event.voice.name,
                 'staff': event.staff.name,
+                if (event.articulations.isNotEmpty)
+                  'articulations': [
+                    for (final mark in Articulation.values)
+                      if (event.articulations.contains(mark)) mark.name,
+                  ],
                 'pitches': [
                   for (final pitch in event.pitches)
                     {
@@ -131,12 +143,8 @@ class ProjectCodec {
       throw FormatException('Invalid $field.');
     }
 
-    if (raw['version'] != 1 &&
-        raw['version'] != 2 &&
-        raw['version'] != 3 &&
-        raw['version'] != 4 &&
-        raw['version'] != 5 &&
-        raw['version'] != 6) {
+    final version = raw['version'];
+    if (version is! int || version < 1 || version > 7) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -152,12 +160,7 @@ class ProjectCodec {
     final key = number(raw, 'key', -7, 7);
     final count = number(raw, 'measureCount', 1, 100000);
     final tempos = <int, int>{};
-    if (raw['version'] == 2 ||
-        ((raw['version'] == 3 ||
-                raw['version'] == 4 ||
-                raw['version'] == 5 ||
-                raw['version'] == 6) &&
-            raw.containsKey('tempoChanges'))) {
+    if (version == 2 || (version > 2 && raw.containsKey('tempoChanges'))) {
       final changes = raw['tempoChanges'];
       if (changes is! List) {
         throw const FormatException('Invalid tempo changes.');
@@ -175,10 +178,7 @@ class ProjectCodec {
     }
     final times = <int, TimeSignature>{};
     final keys = <int, int>{};
-    if (raw['version'] == 3 ||
-        raw['version'] == 4 ||
-        raw['version'] == 5 ||
-        raw['version'] == 6) {
+    if (version >= 3) {
       for (final field in ['timeChanges', 'keyChanges']) {
         final changes = raw[field];
         if (changes == null) continue;
@@ -221,11 +221,11 @@ class ProjectCodec {
     }
 
     final starts =
-        raw['version'] == 4 || raw['version'] == 5 || raw['version'] == 6
+        version >= 4
         ? repeatMarks('repeatStarts')
         : <int>{};
     final ends =
-        raw['version'] == 4 || raw['version'] == 5 || raw['version'] == 6
+        version >= 4
         ? repeatMarks('repeatEnds')
         : <int>{};
     final layout = Score(
@@ -240,8 +240,7 @@ class ProjectCodec {
     );
     final totalTicks = layout.measureStart(count);
     final dynamics = List.generate(count, (_) => <int, DynamicMark>{});
-    if (raw['version'] == 5 ||
-        (raw['version'] == 6 && raw.containsKey('dynamics'))) {
+    if (version == 5 || (version > 5 && raw.containsKey('dynamics'))) {
       final marks = raw['dynamics'];
       if (marks is! List) throw const FormatException('Invalid dynamics.');
       for (final item in marks) {
@@ -265,7 +264,7 @@ class ProjectCodec {
       }
     }
     final hairpins = <Hairpin>[];
-    if (raw['version'] == 6) {
+    if (version == 6 || (version > 6 && raw.containsKey('hairpins'))) {
       final values = raw['hairpins'];
       if (values is! List) throw const FormatException('Invalid hairpins.');
       for (final item in values) {
@@ -337,6 +336,24 @@ class ProjectCodec {
           Pitch(diatonicStep: step, midiNote: midi, accidental: accidental),
         );
       }
+      final articulations = <Articulation>{};
+      if (version >= 7 && item.containsKey('articulations')) {
+        final marks = item['articulations'];
+        if (marks is! List) {
+          throw const FormatException('Invalid articulations.');
+        }
+        for (final mark in marks) {
+          if (!articulations.add(
+            enumValue(Articulation.values, mark, 'articulation'),
+          )) {
+            throw const FormatException('Duplicate articulation.');
+          }
+        }
+        if ((pitches.isEmpty && articulations.isNotEmpty) ||
+            !validArticulations(articulations)) {
+          throw const FormatException('Invalid articulations.');
+        }
+      }
       final measure = layout.measureAtTick(start);
       measures[measure].add(
         NotationEvent(
@@ -345,6 +362,7 @@ class ProjectCodec {
           voice: voice,
           staff: staff,
           pitches: pitches,
+          articulations: articulations,
         ),
       );
     }

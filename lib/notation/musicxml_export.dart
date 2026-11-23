@@ -99,7 +99,9 @@ class MusicXmlExport {
             text('stem', stemPointsUp(event.voice) ? 'up' : 'down');
           }
           text('staff', event.staff == Staff.treble ? 1 : 2);
-          if (event.tieFromPrevious || event.tieToNext) {
+          if (event.tieFromPrevious ||
+              event.tieToNext ||
+              (!chord && event.articulations.isNotEmpty)) {
             xml.element(
               'notations',
               nest: () {
@@ -108,6 +110,28 @@ class MusicXmlExport {
                 }
                 if (event.tieToNext) {
                   xml.element('tied', attributes: {'type': 'start'});
+                }
+                if (!chord && event.articulations.isNotEmpty) {
+                  xml.element(
+                    'articulations',
+                    nest: () {
+                      for (final mark in Articulation.values) {
+                        if (!event.articulations.contains(mark)) continue;
+                        if (mark == Articulation.marcato) {
+                          final above = !stemPointsUp(event.voice);
+                          xml.element(
+                            'strong-accent',
+                            attributes: {
+                              'type': above ? 'up' : 'down',
+                              'placement': above ? 'above' : 'below',
+                            },
+                          );
+                        } else {
+                          xml.element(mark.name);
+                        }
+                      }
+                    },
+                  );
                 }
               },
             );

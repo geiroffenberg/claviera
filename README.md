@@ -79,6 +79,15 @@ The app requests both landscape orientations at startup.
   rest. To add a chord pitch, select a note, switch to Write mode, enable Chord
   Stack, and enter a pitch. Switch Chord Stack off to append again.
 - Undo is on the right rail; Redo is in the menu.
+- Select or enter a note, then use **Articulations** below Chord Stack to
+  toggle staccato, staccatissimo, tenuto, portato, accent and marcato.
+  Portato combines staccato and tenuto; a chord's marks apply to the whole
+  chord. Marks appear on the attack of a tied note, are saved with the project,
+  support Undo and Redo, and are included in PDF and MusicXML.
+  Playback and MIDI approximate the duration and intensity of these marks.
+  When a score has accents but no dynamics, playback uses an mf baseline
+  instead of maximum volume so accents can be heard; scores without accents
+  retain their previous volume.
 - Select a note or rest, or enter one in Write mode, then use **Dynamics** on
   the left rail to add or change a marking from ppp to fff. A marking applies
   to the whole piano from that score position until the next marking, regardless

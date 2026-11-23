@@ -183,6 +183,25 @@ class ScorePainter extends CustomPainter {
     );
   }
 
+  static List<String> articulationGlyphs(
+    Set<Articulation> marks, {
+    required bool above,
+  }) {
+    final below = above ? 0 : 1;
+    final codes = <int>[];
+    if (marks.contains(Articulation.staccato) &&
+        marks.contains(Articulation.tenuto)) {
+      codes.add(0xE4B2 + below);
+    } else {
+      if (marks.contains(Articulation.staccato)) codes.add(0xE4A2 + below);
+      if (marks.contains(Articulation.tenuto)) codes.add(0xE4A4 + below);
+    }
+    if (marks.contains(Articulation.staccatissimo)) codes.add(0xE4A6 + below);
+    if (marks.contains(Articulation.accent)) codes.add(0xE4A0 + below);
+    if (marks.contains(Articulation.marcato)) codes.add(0xE4AC + below);
+    return codes.map(String.fromCharCode).toList();
+  }
+
   static double pitchY(Pitch pitch, Staff staff, double s) {
     final bottomStep = staff == Staff.treble ? 30 : 18;
     final top = (staff == Staff.treble ? 8 : 20) * s;
@@ -682,6 +701,19 @@ class ScorePainter extends CustomPainter {
       if (dotted) {
         _glyph(canvas, '\uE1E7', headX + 1.6 * _s, y - .5 * _s, color: color);
       }
+    }
+    final glyphs = articulationGlyphs(event.articulations, above: !up);
+    final markY = up
+        ? ys.reduce(math.max) + 1.5 * _s
+        : ys.reduce(math.min) - 1.5 * _s;
+    for (var i = 0; i < glyphs.length; i++) {
+      _glyph(
+        canvas,
+        glyphs[i],
+        x + .2 * _s,
+        markY + (up ? 1 : -1) * i * _s,
+        color: color,
+      );
     }
     if (base < 3840) {
       final stemX = x + (up ? 1.15 * _s : 0);

@@ -597,7 +597,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       final plan = PlaybackPlan(editor, tempo, startMeasure: selectedMeasure);
       if (plan.durationMs == 0 && selectedMeasure > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No notes or rests at or after this bar.')),
+          const SnackBar(
+            content: Text('No notes or rests at or after this bar.'),
+          ),
         );
         return;
       }
@@ -889,6 +891,109 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     replaceSelectedRest = false;
     preview = null;
   });
+
+  Future<void> _articulationPalette(int id) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final marks = editor.eventById(id)!.articulations;
+          final portato =
+              marks.contains(Articulation.staccato) &&
+              marks.contains(Articulation.tenuto);
+          void toggle(Articulation? mark) {
+            final next = Set<Articulation>.of(marks);
+            if (mark == null) {
+              next.remove(Articulation.staccatissimo);
+              if (portato) {
+                next.removeAll({Articulation.staccato, Articulation.tenuto});
+              } else {
+                next.addAll({Articulation.staccato, Articulation.tenuto});
+              }
+            } else if (!next.remove(mark)) {
+              if (mark == Articulation.staccatissimo) {
+                next.removeAll({Articulation.staccato, Articulation.tenuto});
+              } else if (mark == Articulation.staccato ||
+                  mark == Articulation.tenuto) {
+                next.remove(Articulation.staccatissimo);
+              } else if (mark == Articulation.accent) {
+                next.remove(Articulation.marcato);
+              } else if (mark == Articulation.marcato) {
+                next.remove(Articulation.accent);
+              }
+              next.add(mark);
+            }
+            _perform(() => editor.setArticulations(id, next));
+            update(() {});
+          }
+
+          final options = [
+            (Articulation.staccato, 'Staccato', '\uE4A2'),
+            (Articulation.staccatissimo, 'Staccatissimo', '\uE4A6'),
+            (Articulation.tenuto, 'Tenuto', '\uE4A4'),
+            (null, 'Portato', '\uE4B2'),
+            (Articulation.accent, 'Accent', '\uE4A0'),
+            (Articulation.marcato, 'Marcato', '\uE4AC'),
+          ];
+          return AlertDialog(
+            title: const Text('Articulations'),
+            titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final (mark, label, glyph) in options)
+                        SizedBox(
+                          width: (constraints.maxWidth - 8) / 2,
+                          child: FilterChip(
+                            label: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: glyph,
+                                    style: const TextStyle(
+                                      fontFamily: 'Bravura',
+                                      fontSize: 22,
+                                    ),
+                                  ),
+                                  TextSpan(text: ' $label'),
+                                ],
+                              ),
+                              style: const TextStyle(fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            selected:
+                                mark == null ? portato : marks.contains(mark),
+                            showCheckmark: false,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onSelected: (_) => toggle(mark),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   Future<void> _dynamicPalette(int tick) async {
     final pending = editor.pendingHairpin;
@@ -1452,6 +1557,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             () => setState(() => chordStack = !chordStack),
                             selected: chordStack,
                           ),
+                          _button(
+                            'Articulations',
+                            Icons.auto_awesome,
+                            event == null || event.isRest
+                                ? null
+                                : () => _articulationPalette(event.id),
+                            selected:
+                                event != null && event.articulations.isNotEmpty,
+                          ),
                         ]),
                       ),
                       Expanded(
@@ -1542,8 +1656,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                       visualDensity: VisualDensity.compact,
                                       icon: const Icon(Icons.chevron_right),
                                       onPressed:
-                                          !playing && selectedMeasure + 1 <
-                                              score.measures.length
+                                          !playing &&
+                                              selectedMeasure + 1 <
+                                                  score.measures.length
                                           ? () => _selectMeasure(
                                               selectedMeasure + 1,
                                             )

@@ -9,6 +9,15 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
+enum Articulation { staccato, staccatissimo, tenuto, accent, marcato }
+
+bool validArticulations(Set<Articulation> marks) =>
+    !(marks.contains(Articulation.staccatissimo) &&
+        (marks.contains(Articulation.staccato) ||
+            marks.contains(Articulation.tenuto))) &&
+    !(marks.contains(Articulation.accent) &&
+        marks.contains(Articulation.marcato));
+
 enum DynamicMark {
   ppp(32),
   pp(42),
@@ -115,6 +124,7 @@ class NotationEvent {
     this.eventId,
     this.tieFromPrevious = false,
     this.tieToNext = false,
+    this.articulations = const {},
   }) : assert(startTick >= 0),
        assert(durationTicks > 0);
 
@@ -126,6 +136,7 @@ class NotationEvent {
   final int? eventId;
   final bool tieFromPrevious;
   final bool tieToNext;
+  final Set<Articulation> articulations;
 
   bool get isRest => pitches.isEmpty;
 }

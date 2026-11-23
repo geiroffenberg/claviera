@@ -49,6 +49,42 @@ class FailingStore extends MemoryStore {
 }
 
 void main() {
+  test('articulations round-trip with other project features and reject invalid marks', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: fSharp,
+    );
+    editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
+    editor.setMeasureTempo(1, 80);
+    editor.setMeasureSignatures(1, key: 1);
+    editor.setMeasureRepeats(1, start: false, end: true);
+    editor.setDynamic(0, DynamicMark.mf);
+    editor.startHairpin(960, HairpinKind.crescendo);
+    editor.endHairpin(1920);
+    final encoded = ProjectCodec.encode(Project(name: 'Test', tempo: 120, editor: editor));
+    final document = jsonDecode(encoded) as Map<String, dynamic>;
+    expect(document['version'], 7);
+    final restored = ProjectCodec.decode(encoded);
+    expect(ProjectCodec.encode(restored), encoded);
+    expect(restored.editor.eventsFor(Voice.v1).first.articulations, {
+      Articulation.staccato,
+      Articulation.accent,
+    });
+    final event = (document['events'] as List).first as Map<String, dynamic>;
+    event['articulations'] = ['staccato', 'staccato'];
+    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
+    event['articulations'] = ['staccatissimo', 'tenuto'];
+    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
+    event['articulations'] = ['unknown'];
+    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
+    event['articulations'] = ['accent'];
+    event['pitches'] = [];
+    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
+  });
+
   test('round trip preserves logical ties, voices, rests and settings', () {
     final editor = ScoreEditor(blankScore);
     editor.setScoreSettings(beats: 4, unit: 4, key: 1);

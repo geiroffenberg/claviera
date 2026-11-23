@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
@@ -89,10 +90,10 @@ class MidiExport {
           }
           notes.add((
             offset + event.start - span.$1,
-            offset + event.end - span.$1,
+            offset + articulatedEnd(event) - span.$1,
             pitch.midiNote,
             event.voice,
-            dynamics.velocityAt(event.start),
+            articulatedVelocity(event, dynamics.velocityAt(event.start)),
           ));
         }
       }

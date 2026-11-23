@@ -54,6 +54,25 @@ List<MidiMessage> parseMidi(Uint8List bytes) {
 }
 
 void main() {
+  test('MIDI applies articulations to every pitch without shifting later notes', () {
+    final editor = ScoreEditor(blankScore);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 960, pitch: c);
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    final ons = messages.where((m) => m.status & 0xf0 == 0x90).toList();
+    final offs = messages.where((m) => m.status & 0xf0 == 0x80).toList();
+    expect(ons.map((m) => (m.tick, m.data[1])), [(0, 96), (0, 96), (960, 80)]);
+    expect(offs.map((m) => m.tick), [480, 480, 1920]);
+  });
+
   test('encodes voices, chords, gaps, ties and overlapping same pitches', () {
     final editor = ScoreEditor(
       Score(

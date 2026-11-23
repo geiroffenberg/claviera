@@ -12,6 +12,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('exports articulations once on a chord attack alongside ties', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.setArticulations(id, {
+      Articulation.staccato,
+      Articulation.tenuto,
+      Articulation.marcato,
+    });
+    final xml = XmlDocument.parse(utf8.decode(MusicXmlExport.encode(editor, 120, 'Marks')));
+    final marks = xml.findAllElements('articulations').single;
+    expect(marks.childElements.map((e) => e.name.local), [
+      'staccato',
+      'tenuto',
+      'strong-accent',
+    ]);
+    expect(marks.getElement('strong-accent')!.getAttribute('type'), 'down');
+    expect(
+      marks.getElement('strong-accent')!.getAttribute('placement'),
+      'below',
+    );
+    final notations = marks.parentElement!;
+    expect(notations.findElements('tied').single.getAttribute('type'), 'start');
+    expect(xml.findAllElements('tied'), hasLength(4));
+  });
+
   test('exports score structure, voices, ties, signatures and repeats', () {
     final editor = ScoreEditor(
       Score(

@@ -9,6 +9,42 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('prints an articulation once on a tied chord attack', (
+    tester,
+  ) async {
+    final editor = ScoreEditor(blankScore);
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    int paragraphs(Score score) {
+      final canvas = TestRecordingCanvas();
+      ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      return canvas.invocations
+          .where((call) => call.invocation.memberName == #drawParagraph)
+          .length;
+    }
+
+    final before = editor.score;
+    editor.setArticulations(id, {Articulation.staccato});
+    final score = editor.score;
+    expect(paragraphs(score), paragraphs(before) + 1);
+    final printed = PrintLayout.systems(score)
+        .expand((system) => system.score.measures)
+        .expand((measure) => measure.events)
+        .where((event) => event.eventId == id)
+        .toList();
+    expect(printed.first.articulations, {Articulation.staccato});
+    expect(printed.last.articulations, isEmpty);
+  });
+
   test('systems retain all bars and inherit key and time at each line', () {
     final score = Score(
       title: 'Print',

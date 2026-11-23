@@ -35,6 +35,93 @@ void main() {
     expect(find.byTooltip('Rest'), findsOneWidget);
   });
 
+  testWidgets(
+    'articulations are below chord stack and toggle compatible marks',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(568, 320));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(const ClavieraApp());
+      final canvas = find.byKey(const ValueKey('score-canvas'));
+      await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+      await tester.pump();
+      final leftScroll = find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.byTooltip('Articulations'),
+        200,
+        scrollable: leftScroll,
+      );
+      expect(
+        tester.getCenter(find.byTooltip('Articulations')).dy,
+        greaterThan(tester.getCenter(find.byTooltip('Chord stack')).dy),
+      );
+      await tester.tap(find.byTooltip('Articulations'));
+      await tester.pumpAndSettle();
+      Finder chip(String label) => find.byWidgetPredicate(
+        (widget) =>
+            widget is FilterChip &&
+            widget.label is Text &&
+            (widget.label as Text).textSpan!.toPlainText().contains(label),
+      );
+      for (final label in [
+        'Staccato',
+        'Staccatissimo',
+        'Tenuto',
+        'Portato',
+        'Accent',
+        'Marcato',
+      ]) {
+        expect(chip(label).hitTestable(), findsOneWidget);
+      }
+      Future<void> tapChip(String label) async {
+        await tester.ensureVisible(chip(label));
+        await tester.pumpAndSettle();
+        await tester.tap(chip(label));
+        await tester.pumpAndSettle();
+      }
+
+      await tapChip('Portato');
+      expect(tester.widget<FilterChip>(chip('Portato')).selected, isTrue);
+      await tapChip('Accent');
+      await tapChip('Marcato');
+      expect(tester.widget<FilterChip>(chip('Accent')).selected, isFalse);
+      expect(tester.widget<FilterChip>(chip('Marcato')).selected, isTrue);
+      await tapChip('Staccatissimo');
+      expect(tester.widget<FilterChip>(chip('Portato')).selected, isFalse);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      final event = tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .selectedEvent!;
+      expect(event.articulations, {
+        Articulation.staccatissimo,
+        Articulation.marcato,
+      });
+      await tester.scrollUntilVisible(
+        find.byTooltip('Undo'),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(ListView).last,
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<ScoreViewport>(find.byType(ScoreViewport))
+            .score
+            .measures[0]
+            .events
+            .firstWhere((event) => !event.isRest)
+            .articulations,
+        {Articulation.staccato, Articulation.tenuto, Articulation.marcato},
+      );
+    },
+  );
+
   testWidgets('beaming updates after writing and undoing notes', (
     tester,
   ) async {

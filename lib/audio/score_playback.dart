@@ -1,5 +1,6 @@
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
@@ -55,6 +56,11 @@ class PlaybackPlan {
 
     final timeline = ScoreTimeline(editor, startMeasure: startMeasure);
     final dynamics = DynamicsTimeline(editor);
+    final hasAccents = timeline.events.any(
+      (event) =>
+          event.articulations.contains(Articulation.accent) ||
+          event.articulations.contains(Articulation.marcato),
+    );
     final score = editor.score;
     final changesByTime = <int, _FrameChanges>{};
     _FrameChanges at(int ms) =>
@@ -66,7 +72,7 @@ class PlaybackPlan {
       final playableEvents = timeline.events
           .where((event) => event.start >= span.$1 && event.end <= span.$2)
           .toList();
-      final playableIds = {for (final event in playableEvents) event.id};
+      final playable = {for (final event in playableEvents) event.id: event};
       int outputTime(int tick) => (elapsed + millis(tick) - base).round();
       var measure = editor.measureAtTick(span.$1);
       while (measure < score.measures.length) {
@@ -76,10 +82,16 @@ class PlaybackPlan {
         final start = barStart < span.$1 ? span.$1 : barStart;
         at(outputTime(start)).measure = measure;
         for (final event in score.measures[measure].events) {
-          if (event.isRest || !playableIds.contains(event.eventId)) continue;
+          final logical = playable[event.eventId];
+          if (event.isRest || logical == null) continue;
           final eventStart = barStart + event.startTick;
-          final eventEnd = eventStart + event.durationTicks;
-          if (eventStart < span.$1 || eventEnd > span.$2) continue;
+          final soundingEnd = articulatedEnd(logical);
+          if (eventStart >= soundingEnd) continue;
+          final eventEnd = (eventStart + event.durationTicks).clamp(
+            eventStart,
+            soundingEnd,
+          );
+          if (eventStart < span.$1 || eventStart >= eventEnd) continue;
           final segment = (
             measure: measure,
             startTick: event.startTick,
@@ -93,7 +105,7 @@ class PlaybackPlan {
       }
       for (final event in playableEvents) {
         final start = (elapsed + millis(event.start) - base).round();
-        final end = (elapsed + millis(event.end) - base).round();
+        final end = (elapsed + millis(articulatedEnd(event)) - base).round();
         for (final pitch in event.pitches) {
           if (pitch.midiNote < 10 || pitch.midiNote > 127) {
             throw StateError(
@@ -105,9 +117,12 @@ class PlaybackPlan {
               pitch.midiNote,
               start,
               end,
-              volume: dynamics.hasExpression
-                  ? dynamics.velocityAt(event.start)
-                  : 127,
+              volume: articulatedVelocity(
+                event,
+                dynamics.hasExpression || hasAccents
+                    ? dynamics.velocityAt(event.start)
+                    : 127,
+              ),
             ),
           );
         }

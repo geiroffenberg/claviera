@@ -19,7 +19,9 @@ class VoiceEvent {
     required this.staff,
     List<Pitch> pitches = const [],
     this.generatedRest = false,
-  }) : pitches = List.unmodifiable(pitches);
+    Set<Articulation> articulations = const {},
+  }) : pitches = List.unmodifiable(pitches),
+       articulations = Set.unmodifiable(articulations);
 
   final int id;
   final int start;
@@ -28,6 +30,7 @@ class VoiceEvent {
   final Staff staff;
   final List<Pitch> pitches;
   final bool generatedRest;
+  final Set<Articulation> articulations;
   bool get isRest => pitches.isEmpty;
   int get end => start + duration;
 
@@ -37,6 +40,7 @@ class VoiceEvent {
     Staff? staff,
     List<Pitch>? pitches,
     bool? generatedRest,
+    Set<Articulation>? articulations,
   }) => VoiceEvent(
     id: id,
     start: start ?? this.start,
@@ -45,6 +49,7 @@ class VoiceEvent {
     staff: staff ?? this.staff,
     pitches: pitches ?? this.pitches,
     generatedRest: generatedRest ?? this.generatedRest,
+    articulations: articulations ?? this.articulations,
   );
 }
 
@@ -116,6 +121,10 @@ class ScoreEditor {
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
       for (final event in source.measures[measure].events) {
+        if ((event.isRest && event.articulations.isNotEmpty) ||
+            !validArticulations(event.articulations)) {
+          throw ArgumentError('Invalid note articulations.');
+        }
         _events.add(
           VoiceEvent(
             id: _nextId++,
@@ -124,6 +133,7 @@ class ScoreEditor {
             voice: event.voice,
             staff: event.staff,
             pitches: event.pitches,
+            articulations: event.articulations,
           ),
         );
       }
@@ -761,6 +771,21 @@ class ScoreEditor {
     );
   }
 
+  void setArticulations(int id, Set<Articulation> articulations) {
+    final event = eventById(id);
+    if (event == null || event.isRest) {
+      throw const EditException('Select a note first.');
+    }
+    if (!validArticulations(articulations)) {
+      throw const EditException('Those articulations cannot be combined.');
+    }
+    if (event.articulations.length == articulations.length &&
+        event.articulations.containsAll(articulations)) {
+      return;
+    }
+    _commit(() => _replace(event, event.copyWith(articulations: articulations)));
+  }
+
   void changePitch(int id, int index, Pitch pitch) {
     final event = eventById(id);
     if (event == null || index < 0 || index >= event.pitches.length) {
@@ -838,7 +863,10 @@ class ScoreEditor {
         final pitches = List<Pitch>.of(event.pitches)..removeAt(pitchIndex);
         _replace(event, event.copyWith(pitches: pitches));
       } else {
-        _replace(event, event.copyWith(pitches: [], generatedRest: true));
+        _replace(
+          event,
+          event.copyWith(pitches: [], generatedRest: true, articulations: {}),
+        );
       }
     });
   }
@@ -866,6 +894,9 @@ class ScoreEditor {
             eventId: event.id,
             tieFromPrevious: !event.isRest && position > event.start,
             tieToNext: !event.isRest && remaining > part,
+            articulations: position == event.start
+                ? event.articulations
+                : const {},
           ),
         );
         position += part;

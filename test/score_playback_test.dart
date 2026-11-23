@@ -77,6 +77,37 @@ void main() {
     expect(() => PlaybackPlan(editor, 0), throwsArgumentError);
   });
 
+  test('articulations change sounding duration, highlights and accent volume', () {
+    final editor = ScoreEditor(fixture);
+    final chord = editor.eventsFor(Voice.v1).first.id;
+    for (final (marks, end) in [
+      ({Articulation.staccato}, 250),
+      ({Articulation.staccatissimo}, 125),
+      ({Articulation.tenuto}, 500),
+      ({Articulation.staccato, Articulation.tenuto}, 375),
+    ]) {
+      editor.setArticulations(chord, marks);
+      final plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.take(2).map((n) => (n.endMs, n.volume)), [
+        (end, 127),
+        (end, 127),
+      ]);
+      expect(
+        plan.frameAt(end)!.segments.any((segment) => segment.eventId == chord),
+        isFalse,
+      );
+    }
+    editor.setArticulations(chord, {Articulation.staccato, Articulation.accent});
+    var plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.take(2).map((n) => n.volume), [96, 96]);
+    expect(plan.notes.last.volume, 80);
+    editor.setDynamic(0, DynamicMark.pp);
+    plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.first.volume, 58);
+    editor.setArticulations(chord, {Articulation.marcato});
+    expect(PlaybackPlan(editor, 120).notes.first.volume, 66);
+  });
+
   test('visual frames follow sounding voices and bar boundaries', () {
     final editor = ScoreEditor(fixture);
     final score = editor.score;
@@ -144,6 +175,24 @@ void main() {
     expect(first.segments.single.eventId, second.segments.single.eventId);
     expect(first.segments.single.startTick, 2880);
     expect(second.segments.single.startTick, 0);
+  });
+
+  test('shortened tied notes do not highlight silent continuation segments', () {
+    final editor = ScoreEditor(
+      const Score(title: '', beatsPerMeasure: 4, beatUnit: 4, measures: [Measure()]),
+    );
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: c,
+    );
+    editor.setArticulations(id, {Articulation.staccato});
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.single.endMs, 2000);
+    expect(plan.frameAt(1999)!.segments, hasLength(1));
+    expect(plan.frameAt(2000)!.segments, isEmpty);
   });
 
   testWidgets('painter highlights every pitch of a playing chord', (
