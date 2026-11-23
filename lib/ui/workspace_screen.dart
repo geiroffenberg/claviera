@@ -913,6 +913,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                 next.remove(Articulation.marcato);
               } else if (mark == Articulation.marcato) {
                 next.remove(Articulation.accent);
+              } else if (mark.isOrnament) {
+                next.removeWhere((item) => item.isOrnament);
               }
               next.add(mark);
             }
@@ -928,6 +930,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
               (null, 'Portato', '\uE4B2'),
               (Articulation.accent, 'Accent', '\uE4A0'),
               (Articulation.marcato, 'Marcato', '\uE4AC'),
+              (Articulation.trill, 'Trill', '\uE566'),
+              (Articulation.upperMordent, 'Upper mordent', '\uE56C'),
+              (Articulation.lowerMordent, 'Lower mordent', '\uE56D'),
+              (Articulation.turn, 'Turn', '\uE567'),
+              (Articulation.invertedTurn, 'Inverted turn', '\uE568'),
             ],
             (Articulation.fermata, 'Fermata', '\uE4C0'),
           ];

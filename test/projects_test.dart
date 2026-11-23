@@ -49,6 +49,39 @@ class FailingStore extends MemoryStore {
 }
 
 void main() {
+  test('ornaments and arpeggios survive project round-trip', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: fSharp,
+    );
+    editor.addPitch(id, natural);
+    editor.setArticulations(id, {
+      Articulation.lowerMordent,
+      Articulation.accent,
+    });
+    final project = Project(name: 'Ornaments', tempo: 120, editor: editor);
+    var encoded = ProjectCodec.encode(project);
+    expect((jsonDecode(encoded) as Map<String, dynamic>)['version'], 9);
+    expect(
+      ProjectCodec.decode(
+        encoded,
+      ).editor.eventsFor(Voice.v1).first.articulations,
+      {Articulation.lowerMordent, Articulation.accent},
+    );
+    editor.setArpeggio(0, ArpeggioDirection.up);
+    encoded = ProjectCodec.encode(project);
+    expect(ProjectCodec.decode(encoded).editor.arpeggios, {
+      0: ArpeggioDirection.up,
+    });
+    final raw = jsonDecode(encoded) as Map<String, dynamic>;
+    final event = (raw['events'] as List).first as Map<String, dynamic>;
+    event['articulations'] = ['trill', 'turn'];
+    expect(() => ProjectCodec.decode(jsonEncode(raw)), throwsFormatException);
+  });
+
   test('arpeggios round-trip and malformed arpeggios are rejected', () {
     final editor = ScoreEditor(blankScore);
     final id = editor.append(

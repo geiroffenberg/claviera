@@ -5,6 +5,7 @@ import '../models/score.dart';
 import 'arpeggio_playback.dart';
 import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
+import 'ornament_playback.dart';
 import 'score_timeline.dart';
 
 class PlaybackFrame {
@@ -137,28 +138,43 @@ class PlaybackPlan {
         measure++;
       }
       for (final event in playableEvents) {
-        final end = outputTime(articulatedEnd(event));
         for (var i = 0; i < event.pitches.length; i++) {
           final pitch = event.pitches[i];
-          final start = outputTime(event.start + (offsets[(event.id, i)] ?? 0));
-          if (pitch.midiNote < 10 || pitch.midiNote > 127) {
-            throw StateError(
-              'MIDI note ${pitch.midiNote} is outside the sample playback range (10–127).',
+          final start = event.start + (offsets[(event.id, i)] ?? 0);
+          final key = editor.keyAt(editor.measureAtTick(event.start));
+          for (final note in ornamentNotes(
+            event,
+            pitch,
+            start: start,
+            keySignature: key,
+          )) {
+            if (note.midi < 10 || note.midi > 127) {
+              throw StateError(
+                'MIDI note ${note.midi} is outside the sample playback range (10–127).',
+              );
+            }
+            final startMs = outputTime(note.start);
+            final endMs = outputTime(note.end);
+            if (startMs >= endMs &&
+                event.articulations.any((mark) => mark.isOrnament)) {
+              throw StateError(
+                'The ornament is too short to play at this tempo.',
+              );
+            }
+            notes.add(
+              PlaybackNote(
+                note.midi,
+                startMs,
+                endMs,
+                volume: articulatedVelocity(
+                  event,
+                  dynamics.hasExpression || hasAccents
+                      ? dynamics.velocityAt(event.start)
+                      : 127,
+                ),
+              ),
             );
           }
-          notes.add(
-            PlaybackNote(
-              pitch.midiNote,
-              start,
-              end,
-              volume: articulatedVelocity(
-                event,
-                dynamics.hasExpression || hasAccents
-                    ? dynamics.velocityAt(event.start)
-                    : 127,
-              ),
-            ),
-          );
         }
       }
       elapsed += millis(span.$2) - base + heldMillis(span.$2);

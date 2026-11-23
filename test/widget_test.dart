@@ -7,7 +7,64 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('arpeggio can combine single notes in different voices', (tester) async {
+  testWidgets('ornaments are available on notes and replace each other', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Articulations'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Articulations'));
+    await tester.pumpAndSettle();
+    Finder chip(String label) => find.byWidgetPredicate(
+      (widget) =>
+          widget is FilterChip &&
+          widget.label is Text &&
+          (widget.label as Text).textSpan!.toPlainText().contains(' $label'),
+    );
+    for (final name in [
+      'Trill',
+      'Upper mordent',
+      'Lower mordent',
+      'Turn',
+      'Inverted turn',
+    ]) {
+      expect(chip(name), findsOneWidget);
+    }
+    await tester.ensureVisible(chip('Trill'));
+    await tester.pumpAndSettle();
+    await tester.tap(chip('Trill'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(chip('Lower mordent'));
+    await tester.pumpAndSettle();
+    await tester.tap(chip('Lower mordent'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(chip('Trill')).selected, isFalse);
+    expect(tester.widget<FilterChip>(chip('Lower mordent')).selected, isTrue);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .selectedEvent!
+          .articulations,
+      {Articulation.lowerMordent},
+    );
+  });
+
+  testWidgets('arpeggio can combine single notes in different voices', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const ClavieraApp());
@@ -22,7 +79,9 @@ void main() {
     await tester.tap(find.byTooltip('Articulations'));
     await tester.pumpAndSettle();
     final up = find.byWidgetPredicate(
-      (widget) => widget is FilterChip && widget.label is Text &&
+      (widget) =>
+          widget is FilterChip &&
+          widget.label is Text &&
           (widget.label as Text).textSpan!.toPlainText() == 'Arpeggio up',
     );
     await tester.ensureVisible(up);
@@ -32,9 +91,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    final score = tester.widget<ScoreViewport>(find.byType(ScoreViewport)).score;
+    final score = tester
+        .widget<ScoreViewport>(find.byType(ScoreViewport))
+        .score;
     expect(score.measures.first.arpeggios, {0: ArpeggioDirection.up});
-    expect(score.measures.first.events.where((event) => !event.isRest), hasLength(2));
+    expect(
+      score.measures.first.events.where((event) => !event.isRest),
+      hasLength(2),
+    );
   });
 
   testWidgets('arpeggio requires simultaneous notes and can change direction', (

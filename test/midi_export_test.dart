@@ -54,6 +54,57 @@ List<MidiMessage> parseMidi(Uint8List bytes) {
 }
 
 void main() {
+  test('MIDI ornaments every pitch of an arpeggiated chord', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.setArticulations(id, {Articulation.lowerMordent});
+    editor.setArpeggio(0, ArpeggioDirection.up);
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    expect(
+      messages
+          .where((message) => message.status & 0xf0 == 0x90)
+          .map((message) => (message.tick, message.data[0])),
+      [(0, 60), (60, 64), (120, 59), (180, 62), (240, 60), (300, 64)],
+    );
+  });
+
+  test('MIDI encodes turn pitches and preserves the following attack', () {
+    final editor = ScoreEditor(blankScore);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.setArticulations(id, {Articulation.turn});
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    expect(
+      messages
+          .where((message) => message.status & 0xf0 == 0x90)
+          .map((message) => (message.tick, message.data[0])),
+      [(0, 62), (120, 60), (240, 59), (360, 60), (960, 60)],
+    );
+    expect(
+      messages
+          .where((message) => message.status & 0xf0 == 0x80)
+          .map((message) => message.tick),
+      [120, 240, 360, 960, 1920],
+    );
+  });
+
   test('MIDI arpeggiates simultaneous pitches across voices in order', () {
     final editor = ScoreEditor(blankScore);
     final id = editor.append(

@@ -5,6 +5,7 @@ import '../models/score.dart';
 import 'arpeggio_playback.dart';
 import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
+import 'ornament_playback.dart';
 import 'score_timeline.dart';
 
 class _MidiEvent {
@@ -91,16 +92,25 @@ class MidiExport {
         if (event.start < span.$1 || event.end > span.$2) continue;
         for (var i = 0; i < event.pitches.length; i++) {
           final pitch = event.pitches[i];
-          if (pitch.midiNote < 0 || pitch.midiNote > 127) {
-            throw StateError('Invalid MIDI pitch: ${pitch.midiNote}.');
+          final start = event.start + (offsets[(event.id, i)] ?? 0);
+          final key = editor.keyAt(editor.measureAtTick(event.start));
+          for (final note in ornamentNotes(
+            event,
+            pitch,
+            start: start,
+            keySignature: key,
+          )) {
+            if (note.midi < 0 || note.midi > 127) {
+              throw StateError('Invalid MIDI pitch: ${note.midi}.');
+            }
+            notes.add((
+              outputTick(note.start),
+              outputTick(note.end),
+              note.midi,
+              event.voice,
+              articulatedVelocity(event, dynamics.velocityAt(event.start)),
+            ));
           }
-          notes.add((
-            outputTick(event.start + (offsets[(event.id, i)] ?? 0)),
-            outputTick(articulatedEnd(event)),
-            pitch.midiNote,
-            event.voice,
-            articulatedVelocity(event, dynamics.velocityAt(event.start)),
-          ));
         }
       }
       offset += span.$2 - span.$1 + holds.extraTicksAt(span.$2);

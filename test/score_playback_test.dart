@@ -63,6 +63,116 @@ const fixture = Score(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('ornaments play the expected figures with key-aware neighbors', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        keySignature: 1,
+        measures: [Measure()],
+      ),
+    );
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 30, midiNote: 64),
+    );
+    for (final (mark, pitches) in [
+      (Articulation.upperMordent, [64, 66, 64]),
+      (Articulation.lowerMordent, [64, 62, 64]),
+      (Articulation.turn, [66, 64, 62, 64]),
+      (Articulation.invertedTurn, [62, 64, 66, 64]),
+    ]) {
+      editor.setArticulations(id, {mark});
+      final plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.map((note) => note.midi), pitches);
+      expect(plan.notes.first.startMs, 0);
+      expect(plan.notes.last.endMs, 500);
+      expect(plan.frameAt(300)!.playingPitches.values.single, {0});
+    }
+    editor.setArticulations(id, {Articulation.trill});
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.map((note) => note.midi), [
+      64,
+      66,
+      64,
+      66,
+      64,
+      66,
+      64,
+      66,
+      64,
+    ]);
+    expect(plan.notes.last.endMs, 500);
+  });
+
+  test('ornaments respect short notes and reject out-of-range neighbors', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
+    );
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 60,
+      pitch: c,
+    );
+    editor.addPitch(id, sharp);
+    editor.setArticulations(id, {
+      Articulation.staccatissimo,
+      Articulation.trill,
+    });
+
+    editor.setArpeggio(0, ArpeggioDirection.up);
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.every((note) => note.startMs < note.endMs), isTrue);
+    expect(() => PlaybackPlan(editor, 240), throwsStateError);
+    final high = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
+    );
+    final highId = high.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 67, midiNote: 127),
+    );
+    high.setArticulations(highId, {Articulation.trill});
+    expect(() => PlaybackPlan(high, 120), throwsStateError);
+  });
+
+  test('long trills remain rapid across tied bars', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
+    );
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 16 * 3840,
+      pitch: c,
+    );
+    editor.setArticulations(id, {Articulation.trill});
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.length, greaterThan(500));
+    expect(plan.notes.every((note) => note.endMs - note.startMs < 70), isTrue);
+    expect(plan.notes.last.endMs, 32000);
+  });
+
   test(
     'arpeggio staggers pitches across voices and highlights each attack',
     () {

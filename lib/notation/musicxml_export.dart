@@ -97,6 +97,8 @@ class MusicXmlExport {
           if (event.tieFromPrevious ||
               event.tieToNext ||
               (pitch != null && arpeggio != null) ||
+              (pitch != null &&
+                  event.articulations.any((mark) => mark.isOrnament)) ||
               (!chord && event.articulations.isNotEmpty)) {
             xml.element(
               'notations',
@@ -117,15 +119,43 @@ class MusicXmlExport {
                     attributes: {'number': '1', 'direction': arpeggio.name},
                   );
                 }
+                if (pitch != null &&
+                    event.articulations.any((mark) => mark.isOrnament)) {
+                  xml.element(
+                    'ornaments',
+                    nest: () {
+                      for (final mark in event.articulations.where(
+                        (mark) => mark.isOrnament,
+                      )) {
+                        xml.element(
+                          switch (mark) {
+                            Articulation.trill => 'trill-mark',
+                            Articulation.upperMordent => 'inverted-mordent',
+                            Articulation.lowerMordent => 'mordent',
+                            Articulation.turn => 'turn',
+                            Articulation.invertedTurn => 'inverted-turn',
+                            _ => throw StateError('Invalid ornament.'),
+                          },
+                          attributes: {
+                            if (mark == Articulation.invertedTurn)
+                              'start-note': 'below',
+                          },
+                        );
+                      }
+                    },
+                  );
+                }
                 if (!chord &&
                     event.articulations.any(
-                      (mark) => mark != Articulation.fermata,
+                      (mark) =>
+                          mark != Articulation.fermata && !mark.isOrnament,
                     )) {
                   xml.element(
                     'articulations',
                     nest: () {
                       for (final mark in Articulation.values) {
                         if (mark == Articulation.fermata ||
+                            mark.isOrnament ||
                             !event.articulations.contains(mark)) {
                           continue;
                         }

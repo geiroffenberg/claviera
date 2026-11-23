@@ -815,6 +815,37 @@ class ScorePainter extends CustomPainter {
         color: color,
       );
     }
+    for (final mark in event.articulations.where((mark) => mark.isOrnament)) {
+      final ornamentY = up
+          ? math.min(
+              math.min(top - .5 * _s, ys.reduce(math.min) - 4.5 * _s),
+              (beamY ?? double.infinity) - _s,
+            )
+          : math.min(
+              top - .5 * _s,
+              markY -
+                  (glyphs.length +
+                          (event.articulations.contains(Articulation.fermata)
+                              ? 1
+                              : 0) +
+                          1) *
+                      _s,
+            );
+      _glyph(
+        canvas,
+        switch (mark) {
+          Articulation.trill => '\uE566',
+          Articulation.upperMordent => '\uE56C',
+          Articulation.lowerMordent => '\uE56D',
+          Articulation.turn => '\uE567',
+          Articulation.invertedTurn => '\uE568',
+          _ => throw StateError('Invalid ornament.'),
+        },
+        x,
+        ornamentY,
+        color: color,
+      );
+    }
     if (base < 3840) {
       final stemX = x + (up ? 1.15 * _s : 0);
       final stemEnd =

@@ -9,7 +9,24 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
-enum Articulation { staccato, staccatissimo, tenuto, accent, marcato, fermata }
+enum Articulation {
+  staccato,
+  staccatissimo,
+  tenuto,
+  accent,
+  marcato,
+  fermata,
+  trill,
+  upperMordent,
+  lowerMordent,
+  turn,
+  invertedTurn;
+
+  bool get isOrnament => switch (this) {
+    trill || upperMordent || lowerMordent || turn || invertedTurn => true,
+    _ => false,
+  };
+}
 
 bool validArticulations(Set<Articulation> marks, {bool isRest = false}) =>
     (!isRest || marks.every((mark) => mark == Articulation.fermata)) &&
@@ -17,7 +34,8 @@ bool validArticulations(Set<Articulation> marks, {bool isRest = false}) =>
         (marks.contains(Articulation.staccato) ||
             marks.contains(Articulation.tenuto))) &&
     !(marks.contains(Articulation.accent) &&
-        marks.contains(Articulation.marcato));
+        marks.contains(Articulation.marcato)) &&
+    marks.where((mark) => mark.isOrnament).length <= 1;
 
 enum DynamicMark {
   ppp(32),

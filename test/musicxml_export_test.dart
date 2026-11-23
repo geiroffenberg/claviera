@@ -12,6 +12,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('exports each ornament as MusicXML ornaments for every chord pitch', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    for (final (mark, tag) in [
+      (Articulation.trill, 'trill-mark'),
+      (Articulation.upperMordent, 'inverted-mordent'),
+      (Articulation.lowerMordent, 'mordent'),
+      (Articulation.turn, 'turn'),
+      (Articulation.invertedTurn, 'inverted-turn'),
+    ]) {
+      editor.setArticulations(id, {mark, Articulation.accent});
+      final xml = XmlDocument.parse(
+        utf8.decode(MusicXmlExport.encode(editor, 120, 'Ornaments')),
+      );
+      expect(xml.findAllElements(tag), hasLength(2));
+      if (mark == Articulation.invertedTurn) {
+        expect(
+          xml.findAllElements(tag).map((e) => e.getAttribute('start-note')),
+          everyElement('below'),
+        );
+      }
+      expect(xml.findAllElements('ornaments'), hasLength(2));
+      expect(xml.findAllElements('accent'), hasLength(1));
+    }
+  });
+
   test(
     'exports one linked arpeggio across voices and only on tied attacks',
     () {

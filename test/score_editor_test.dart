@@ -12,6 +12,36 @@ const c = Pitch(diatonicStep: 28, midiNote: 60);
 const d = Pitch(diatonicStep: 29, midiNote: 62);
 
 void main() {
+  test('ornaments are mutually exclusive and remain on tied attacks', () {
+    final editor = ScoreEditor(emptyScore);
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: c,
+    );
+    editor.setArticulations(id, {Articulation.trill, Articulation.accent});
+    expect(
+      () =>
+          editor.setArticulations(id, {Articulation.trill, Articulation.turn}),
+      throwsA(isA<EditException>()),
+    );
+    final segments = editor.score.measures
+        .expand((m) => m.events)
+        .where((event) => event.eventId == id)
+        .toList();
+    expect(segments.first.articulations, {
+      Articulation.trill,
+      Articulation.accent,
+    });
+    expect(segments.last.articulations, isEmpty);
+    editor.undo();
+    expect(editor.eventById(id)!.articulations, isEmpty);
+    editor.redo();
+    expect(editor.eventById(id)!.articulations, contains(Articulation.trill));
+  });
+
   test('arpeggios combine voices, follow meter changes and undo deletion', () {
     final editor = ScoreEditor(
       const Score(

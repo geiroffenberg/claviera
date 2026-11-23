@@ -27,8 +27,15 @@ class ProjectCodec {
           .eventsFor(voice)
           .any((event) => event.articulations.isNotEmpty),
     );
+    final hasOrnaments = Voice.values.any(
+      (voice) => project.editor
+          .eventsFor(voice)
+          .any((event) => event.articulations.any((mark) => mark.isOrnament)),
+    );
     return jsonEncode({
-      'version': project.editor.arpeggios.isNotEmpty
+      'version': hasOrnaments
+          ? 9
+          : project.editor.arpeggios.isNotEmpty
           ? 8
           : hasArticulations
           ? 7
@@ -153,7 +160,7 @@ class ProjectCodec {
     }
 
     final version = raw['version'];
-    if (version is! int || version < 1 || version > 8) {
+    if (version is! int || version < 1 || version > 9) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -243,7 +250,7 @@ class ProjectCodec {
     );
     final totalTicks = layout.measureStart(count);
     final arpeggios = List.generate(count, (_) => <int, ArpeggioDirection>{});
-    if (version >= 8) {
+    if (version == 8 || (version > 8 && raw.containsKey('arpeggios'))) {
       final marks = raw['arpeggios'];
       if (marks is! List) throw const FormatException('Invalid arpeggios.');
       for (final item in marks) {
@@ -370,9 +377,15 @@ class ProjectCodec {
           throw const FormatException('Invalid articulations.');
         }
         for (final mark in marks) {
-          if (!articulations.add(
-            enumValue(Articulation.values, mark, 'articulation'),
-          )) {
+          final articulation = enumValue(
+            Articulation.values,
+            mark,
+            'articulation',
+          );
+          if (version < 9 && articulation.isOrnament) {
+            throw const FormatException('Ornaments require project version 9.');
+          }
+          if (!articulations.add(articulation)) {
             throw const FormatException('Duplicate articulation.');
           }
         }

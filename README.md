@@ -94,6 +94,14 @@ The app requests both landscape orientations at startup.
   MusicXML. Playback and MIDI pause the entire score at its end for half its
   written duration; simultaneous fermatas ending together use the longest
   hold. Shortened articulations may stop sounding before the pause.
+- The same menu offers trill, upper and lower mordents, turn and inverted
+  turn. Choose one ornament per note or chord; selecting another replaces it.
+  Ornaments apply to every pitch in a chord, appear on the attack of a tied
+  note, and are saved and exported to PDF and MusicXML. Playback and MIDI
+  approximate them using diatonic neighbors from the current key signature;
+  they do not add separately notated accidental overrides for those neighbors.
+  Playback reports an error if an ornament is too short to schedule or its
+  neighbor is outside the available piano-sample range.
 - In **Articulations**, choose **Arpeggio up** or **Arpeggio down** when at
   least two notes start together. The mark combines those notes across voices
   and staves; selecting it again removes it. Playback and MIDI spread the
