@@ -99,6 +99,12 @@ class MidiExport {
             pitch,
             start: start,
             keySignature: key,
+            neighborMidi: (step) => editor.previewMidi(
+              step,
+              Accidental.none,
+              event.staff,
+              event.start,
+            ),
           )) {
             if (note.midi < 0 || note.midi > 127) {
               throw StateError('Invalid MIDI pitch: ${note.midi}.');

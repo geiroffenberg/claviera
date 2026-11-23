@@ -18,13 +18,34 @@ void showWorkspaceMenu(
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (context) => SafeArea(
+    builder: (sheetContext) => SafeArea(
       child: ListView(
         shrinkWrap: true,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text('Menu', style: TextStyle(fontWeight: FontWeight.bold)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              children: [
+                const Text(
+                  'Menu',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  label: const Text('Getting started'),
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _showGettingStarted(context);
+                  },
+                ),
+              ],
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.redo),
@@ -32,7 +53,7 @@ void showWorkspaceMenu(
             enabled: canRedo,
             onTap: canRedo
                 ? () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     onRedo();
                   }
                 : null,
@@ -53,7 +74,7 @@ void showWorkspaceMenu(
               leading: Icon(item.$1),
               title: Text(item.$2),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 item.$3();
               },
             ),
@@ -68,6 +89,77 @@ void showWorkspaceMenu(
             ),
         ],
       ),
+    ),
+  );
+}
+
+void _showGettingStarted(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Getting started'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (heading, description) in const [
+                (
+                  'Write notes',
+                  'In Write mode, choose a voice and note length. Touch the '
+                      'staff and drag up or down to choose a pitch; release '
+                      'to add it at the green cursor. Switch Note to Rest '
+                      'to enter rests.',
+                ),
+                (
+                  'Move around',
+                  'Drag the score with two fingers to scroll. Use the Bar '
+                      'arrows to choose where to write.',
+                ),
+                (
+                  'Edit',
+                  'Switch to Edit mode and tap a bar or a note in the active '
+                      'voice. Drag a note vertically to change its pitch, '
+                      'change its length, or use Delete. Undo is on the right; '
+                      'Redo is in the menu.',
+                ),
+                (
+                  'Play',
+                  'Play starts at the selected bar. Use Go to start beside '
+                      'Play to return to the beginning. Tap BPM to set tempo.',
+                ),
+                (
+                  'Score settings',
+                  'Tap the clefs or time signature to set the initial key '
+                      'and meter. Tap a bar number for settings for that bar.',
+                ),
+                (
+                  'Save and back up',
+                  'Use Menu > Save to save your project. Back up project saves '
+                      'an editable copy outside the app; Restore project '
+                      'backup opens it as a new project.',
+                ),
+              ]) ...[
+                Text(
+                  heading,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(description),
+                const SizedBox(height: 12),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
     ),
   );
 }

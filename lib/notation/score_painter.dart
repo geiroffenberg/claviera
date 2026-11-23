@@ -774,12 +774,14 @@ class ScorePainter extends CustomPainter {
         );
       }
       _glyph(canvas, head, headX, y, color: pitchColor);
-      final accidental = switch (pitch.accidental) {
-        Accidental.none => null,
-        Accidental.sharp => '\uE262',
-        Accidental.flat => '\uE260',
-        Accidental.natural => '\uE261',
-      };
+      final accidental = event.tieFromPrevious
+          ? null
+          : switch (pitch.accidental) {
+              Accidental.none => null,
+              Accidental.sharp => '\uE262',
+              Accidental.flat => '\uE260',
+              Accidental.natural => '\uE261',
+            };
       if (accidental != null) {
         _glyph(canvas, accidental, headX - 1.5 * _s, y, color: pitchColor);
       }

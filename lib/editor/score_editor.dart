@@ -146,7 +146,7 @@ class ScoreEditor {
     }
     for (final voice in Voice.values) {
       var end = 0;
-      for (final event in eventsFor(voice)) {
+      for (final event in storedEventsFor(voice)) {
         if (event.start < end) {
           throw ArgumentError(
             'The source score has overlapping events in ${voice.name}.',
@@ -156,6 +156,11 @@ class ScoreEditor {
       }
     }
     _normalizeRests();
+    try {
+      _resolvedEvents();
+    } on EditException catch (error) {
+      throw ArgumentError(error.message);
+    }
     for (var measure = 0; measure < source.measures.length; measure++) {
       for (final offset in source.measures[measure].arpeggios.keys) {
         if (offset < 0 ||
@@ -247,6 +252,7 @@ class ScoreEditor {
   }
 
   List<VoiceEvent> _events = [];
+  List<VoiceEvent>? _resolvedCache;
   int _measureCount;
   int _nextId = 1;
   final List<_Snapshot> _undo = [];
@@ -254,21 +260,164 @@ class ScoreEditor {
 
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
-  List<VoiceEvent> eventsFor(Voice voice) =>
+  // Persist the underlying pitches, not the derived in-bar alterations.
+  List<VoiceEvent> storedEventsFor(Voice voice) =>
       _events.where((e) => e.voice == voice).toList()
         ..sort((a, b) => a.start.compareTo(b.start));
+
+  List<VoiceEvent> eventsFor(Voice voice) =>
+      _resolvedEvents().where((e) => e.voice == voice).toList()
+        ..sort((a, b) => a.start.compareTo(b.start));
+
   VoiceEvent? eventById(int? id) {
+    for (final event in _resolvedEvents()) {
+      if (event.id == id) return event;
+    }
+    return null;
+  }
+
+  VoiceEvent? _storedEventById(int? id) {
     for (final event in _events) {
       if (event.id == id) return event;
     }
     return null;
   }
 
+  List<VoiceEvent> _resolvedEvents() {
+    final cached = _resolvedCache;
+    if (cached != null) return cached;
+    final events = List<VoiceEvent>.of(_events)
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final result = <VoiceEvent>[];
+    // A null value means simultaneous accidentals left this pitch ambiguous.
+    final carried = <(Staff, int), Accidental?>{};
+    var measure = -1;
+    for (var first = 0; first < events.length;) {
+      final tick = events[first].start;
+      final currentMeasure = measureAtTick(tick);
+      if (currentMeasure != measure) {
+        carried.clear();
+        measure = currentMeasure;
+      }
+      var end = first + 1;
+      while (end < events.length && events[end].start == tick) {
+        end++;
+      }
+      final explicit = <(Staff, int), Set<Accidental>>{};
+      for (final event in events.sublist(first, end)) {
+        for (final pitch in event.pitches) {
+          if (pitch.accidental != Accidental.none) {
+            explicit
+                .putIfAbsent((event.staff, pitch.diatonicStep), () => {})
+                .add(pitch.accidental);
+          }
+        }
+      }
+      // Resolve a whole onset together, independent of voice ordering.
+      final changes = <(Staff, int), Set<Accidental>>{
+        for (final entry in explicit.entries) entry.key: {...entry.value},
+      };
+      for (final event in events.sublist(first, end)) {
+        final pitches = <Pitch>[];
+        var changed = false;
+        for (final pitch in event.pitches) {
+          final key = (event.staff, pitch.diatonicStep);
+          var midi = pitch.midiNote;
+          var accidental = pitch.accidental;
+          if (accidental == Accidental.none) {
+            final previous = carried[key];
+            if (previous != null) {
+              midi = soundingMidi(pitch.diatonicStep, previous, 0);
+            }
+            final simultaneous = explicit[key];
+            final ambiguous = carried.containsKey(key) && previous == null;
+            final conflicting =
+                simultaneous != null &&
+                simultaneous.any(
+                  (mark) => soundingMidi(pitch.diatonicStep, mark, 0) != midi,
+                );
+            if (ambiguous || conflicting) {
+              final natural = soundingMidi(
+                pitch.diatonicStep,
+                Accidental.natural,
+                0,
+              );
+              accidental = switch (midi - natural) {
+                -1 => Accidental.flat,
+                0 => Accidental.natural,
+                1 => Accidental.sharp,
+                _ => throw const EditException(
+                  'A conflicting accidental cannot be represented.',
+                ),
+              };
+              changes.putIfAbsent(key, () => {}).add(accidental);
+            }
+          }
+          if (midi < 0 || midi > 127) {
+            throw const EditException(
+              'An accidental would put a note outside the MIDI range.',
+            );
+          }
+          if (midi == pitch.midiNote && accidental == pitch.accidental) {
+            pitches.add(pitch);
+          } else {
+            changed = true;
+            pitches.add(
+              Pitch(
+                diatonicStep: pitch.diatonicStep,
+                midiNote: midi,
+                accidental: accidental,
+              ),
+            );
+          }
+        }
+        result.add(changed ? event.copyWith(pitches: pitches) : event);
+      }
+      for (final entry in changes.entries) {
+        carried[entry.key] = entry.value.length == 1
+            ? entry.value.single
+            : null;
+      }
+      first = end;
+    }
+    return _resolvedCache = result;
+  }
+
+  int previewMidi(int step, Accidental accidental, Staff staff, int tick) {
+    if (accidental != Accidental.none) {
+      return soundingMidi(step, accidental, keyAt(measureAtTick(tick)));
+    }
+    final measure = measureAtTick(tick);
+    final start = measureStart(measure);
+    var latest = -1;
+    final marks = <Accidental>{};
+    for (final event in _resolvedEvents()) {
+      if (event.staff != staff || event.start < start || event.start >= tick) {
+        continue;
+      }
+      for (final pitch in event.pitches) {
+        if (pitch.diatonicStep != step || pitch.accidental == Accidental.none) {
+          continue;
+        }
+        if (event.start > latest) {
+          latest = event.start;
+          marks.clear();
+        }
+        if (event.start == latest) marks.add(pitch.accidental);
+      }
+    }
+    return soundingMidi(
+      step,
+      marks.length == 1 ? marks.single : Accidental.none,
+      keyAt(measure),
+    );
+  }
+
   int get measureCount => _measureCount;
 
   int nextTick(Voice voice, {int? measure}) {
     if (measure == null) {
-      final events = eventsFor(voice);
+      final events = storedEventsFor(voice);
       return events.isEmpty ? 0 : events.last.end;
     }
     if (measure < 0 || measure >= _measureCount) {
@@ -277,7 +426,7 @@ class ScoreEditor {
     final start = measureStart(measure);
     final end = start + timeAt(measure).ticks;
     var cursor = start;
-    for (final event in eventsFor(voice)) {
+    for (final event in storedEventsFor(voice)) {
       if (event.start < end && event.end > start) {
         cursor = math.max(cursor, math.min(event.end, end));
       }
@@ -302,6 +451,7 @@ class ScoreEditor {
     Map.of(_arpeggios),
   );
   void _restore(_Snapshot snapshot) {
+    _resolvedCache = null;
     _events = List.of(snapshot.events);
     _measureCount = snapshot.measureCount;
     _nextId = snapshot.nextId;
@@ -320,10 +470,12 @@ class ScoreEditor {
 
   void _commit(void Function() change) {
     final before = _snapshot();
+    _resolvedCache = null;
     try {
       change();
       _normalizeRests();
       _arpeggios.removeWhere((tick, _) => pitchCountAt(tick) < 2);
+      _resolvedEvents();
     } on EditException {
       _restore(before);
       rethrow;
@@ -642,7 +794,7 @@ class ScoreEditor {
     final previous = _events.where((e) => e.isRest && e.generatedRest).toList();
     _events.removeWhere((e) => e.isRest && e.generatedRest);
     for (final voice in Voice.values) {
-      final events = eventsFor(voice);
+      final events = storedEventsFor(voice);
       for (var measure = 0; measure < _measureCount; measure++) {
         final start = measureStart(measure);
         final end = start + timeAt(measure).ticks;
@@ -744,7 +896,7 @@ class ScoreEditor {
     var id = 0;
     _commit(() {
       final start = nextTick(voice, measure: measure);
-      if (eventsFor(voice).any(
+      if (storedEventsFor(voice).any(
         (e) =>
             e.start < start + duration &&
             e.end > start &&
@@ -771,7 +923,7 @@ class ScoreEditor {
   }
 
   int replaceRest(int id, int duration, Pitch pitch, Staff staff) {
-    final rest = eventById(id);
+    final rest = _storedEventById(id);
     if (rest == null || !rest.isRest) {
       throw const EditException('Select a rest first.');
     }
@@ -808,7 +960,7 @@ class ScoreEditor {
   }
 
   void addPitch(int id, Pitch pitch) {
-    final event = eventById(id);
+    final event = _storedEventById(id);
     if (event == null || event.isRest) {
       throw const EditException('Select a note to add a chord pitch.');
     }
@@ -818,7 +970,7 @@ class ScoreEditor {
   }
 
   void setArticulations(int id, Set<Articulation> articulations) {
-    final event = eventById(id);
+    final event = _storedEventById(id);
     if (event == null) {
       throw const EditException('Select a note or rest first.');
     }
@@ -843,7 +995,7 @@ class ScoreEditor {
   }
 
   void changePitch(int id, int index, Pitch pitch) {
-    final event = eventById(id);
+    final event = _storedEventById(id);
     if (event == null || index < 0 || index >= event.pitches.length) {
       throw const EditException('Select a note first.');
     }
@@ -854,13 +1006,13 @@ class ScoreEditor {
   }
 
   void resize(int id, int duration) {
-    final event = eventById(id);
+    final event = _storedEventById(id);
     if (event == null) throw const EditException('Select an event first.');
     if (duration <= 0 || duration % 60 != 0) {
       throw const EditException('Unsupported duration.');
     }
     if (duration == event.duration) return;
-    final events = eventsFor(event.voice);
+    final events = storedEventsFor(event.voice);
     final following = events.skipWhile((e) => e.id != id).skip(1).toList();
     final nextNote = following.where((e) => !e.isRest).firstOrNull;
     final newEnd = event.start + duration;
@@ -901,11 +1053,11 @@ class ScoreEditor {
   }
 
   void delete(int id, {int? pitchIndex}) {
-    final event = eventById(id);
+    final event = _storedEventById(id);
     if (event == null) throw const EditException('Select an event first.');
     final barEnd = measureStart(measureAtTick(event.start) + 1);
     if (event.isRest &&
-        eventsFor(
+        storedEventsFor(
           event.voice,
         ).any((e) => e.start >= event.end && e.start < barEnd)) {
       throw const EditException(
@@ -930,7 +1082,7 @@ class ScoreEditor {
   Score get score {
     final measures = List.generate(_measureCount, (_) => <NotationEvent>[]);
     final values = _notationValues;
-    for (final event in _events) {
+    for (final event in _resolvedEvents()) {
       var position = event.start;
       var remaining = event.duration;
       while (remaining > 0) {

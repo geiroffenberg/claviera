@@ -11,6 +11,7 @@ List<OrnamentNote> ornamentNotes(
   Pitch pitch, {
   required int start,
   required int keySignature,
+  int Function(int step)? neighborMidi,
 }) {
   final end = articulatedEnd(event);
   final ornament = event.articulations
@@ -21,6 +22,9 @@ List<OrnamentNote> ornamentNotes(
   }
   int neighbor(int direction) {
     final step = pitch.diatonicStep + direction;
+    if (neighborMidi != null && step >= 0 && step <= 67) {
+      return neighborMidi(step);
+    }
     const semitones = [0, 2, 4, 5, 7, 9, 11];
     return 12 +
         (step / 7).floor() * 12 +

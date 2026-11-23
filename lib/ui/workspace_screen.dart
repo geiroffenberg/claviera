@@ -587,10 +587,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   void _previewPitch(Pitch pitch, {Accidental accidental = Accidental.none}) {
-    final midi = soundingMidi(
+    final event = selected;
+    final tick =
+        event != null &&
+            (mode == WorkspaceMode.edit ||
+                (replaceSelectedRest && event.isRest) ||
+                (chordStack && !event.isRest))
+        ? event.start
+        : editor.nextTick(voice, measure: selectedMeasure);
+    final midi = editor.previewMidi(
       pitch.diatonicStep,
       accidental,
-      editor.keyAt(entryMeasure),
+      previewStaff ?? event?.staff ?? Staff.treble,
+      tick,
     );
     if (midi >= 0 && midi <= 127) {
       piano.play(midi);

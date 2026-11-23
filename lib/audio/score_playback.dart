@@ -147,6 +147,12 @@ class PlaybackPlan {
             pitch,
             start: start,
             keySignature: key,
+            neighborMidi: (step) => editor.previewMidi(
+              step,
+              Accidental.none,
+              event.staff,
+              event.start,
+            ),
           )) {
             if (note.midi < 10 || note.midi > 127) {
               throw StateError(

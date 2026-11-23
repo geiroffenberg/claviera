@@ -1,8 +1,8 @@
 # Claviera
 
 Claviera is an Android landscape-first piano score sketchpad. The current
-prototype opens a blank four-bar score in 4/4. Projects can be saved on the
-device; unsaved changes are held in memory.
+prototype opens a blank four-bar score in 4/4. Projects and recovery drafts are
+stored on the device.
 
 ## Run
 
@@ -12,6 +12,7 @@ The app requests both landscape orientations at startup.
 
 ## Using the editor
 
+- Open **Menu > Getting started** for a short guide to the basic controls.
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls
   don't fit on screen. Values run from whole through 64th. Tap **Dot** to
@@ -20,9 +21,13 @@ The app requests both landscape orientations at startup.
 - Tap the clefs or time signature at the beginning of the staff to open
   **Score settings**. Choose the initial key signature and time signature.
   Key signatures change the sounding pitch of existing notes
-  without explicit accidentals as well as newly entered notes. Explicit
-  accidentals override the key on their individual note; accidental carry
-  through the rest of the bar is not yet implemented.
+  without explicit accidentals as well as newly entered notes. A sharp, flat or
+  natural applies to subsequent notes at the same pitch and octave on that
+  staff, including other voices, until another accidental or the next bar.
+  Tied notes retain their pitch across barlines. Conflicting simultaneous
+  pitches are given explicit signs when necessary to avoid ambiguity.
+  Existing projects may sound different if they previously relied on the
+  missing accidental carry.
 - Changing the meter keeps each event in its existing bar. A shorter meter is
   rejected if a note or explicit rest no longer fits. A meter change is also
   blocked if it changes the length of a bar crossed by an existing tied note;
@@ -98,8 +103,9 @@ The app requests both landscape orientations at startup.
   turn. Choose one ornament per note or chord; selecting another replaces it.
   Ornaments apply to every pitch in a chord, appear on the attack of a tied
   note, and are saved and exported to PDF and MusicXML. Playback and MIDI
-  approximate them using diatonic neighbors from the current key signature;
-  they do not add separately notated accidental overrides for those neighbors.
+  approximate them using diatonic neighbors from the current key signature and
+  earlier accidentals on the same staff; they do not add separately notated
+  accidental overrides for those neighbors.
   Playback reports an error if an ornament is too short to schedule or its
   neighbor is outside the available piano-sample range.
 - In **Articulations**, choose **Arpeggio up** or **Arpeggio down** when at

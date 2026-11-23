@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:claviera/audio/piano_preview.dart';
+import 'package:claviera/notation/score_viewport.dart';
 import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -200,6 +201,58 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets('write preview follows an earlier accidental in the bar', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+    );
+    await tester.pump();
+    final origin = tester.getTopLeft(
+      find.byKey(const ValueKey('score-canvas')),
+    );
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('♯ accidental'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).last,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('♯ accidental'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Edit mode'));
+    await tester.pump();
+    final gesture = await tester.startGesture(origin + const Offset(160, 115));
+    await tester.pump();
+    expect(calls.where((call) => call.method == 'play').last.arguments, {
+      'midi': 66,
+    });
+    await gesture.up();
+    await tester.pump();
+    final score = tester
+        .widget<ScoreViewport>(find.byType(ScoreViewport))
+        .score;
+    expect(
+      score.measures.first.events.map((event) => event.pitches.single.midiNote),
+      [66, 66],
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('compact landscape header fits with the mute control', (
     tester,

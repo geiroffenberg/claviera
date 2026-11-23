@@ -24,12 +24,12 @@ class ProjectCodec {
     final score = project.editor.score;
     final hasArticulations = Voice.values.any(
       (voice) => project.editor
-          .eventsFor(voice)
+          .storedEventsFor(voice)
           .any((event) => event.articulations.isNotEmpty),
     );
     final hasOrnaments = Voice.values.any(
       (voice) => project.editor
-          .eventsFor(voice)
+          .storedEventsFor(voice)
           .any((event) => event.articulations.any((mark) => mark.isOrnament)),
     );
     return jsonEncode({
@@ -114,7 +114,7 @@ class ProjectCodec {
         ],
       'events': [
         for (final voice in Voice.values)
-          for (final event in project.editor.eventsFor(voice))
+          for (final event in project.editor.storedEventsFor(voice))
             if (!event.generatedRest)
               {
                 'start': event.start,

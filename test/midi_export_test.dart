@@ -54,6 +54,53 @@ List<MidiMessage> parseMidi(Uint8List bytes) {
 }
 
 void main() {
+  test('playback and MIDI follow carried accidentals, including ornaments', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(
+        diatonicStep: 29,
+        midiNote: 63,
+        accidental: Accidental.sharp,
+      ),
+    );
+    final trill = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.setArticulations(trill, {Articulation.trill});
+    final following = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 29, midiNote: 62),
+    );
+    expect(editor.eventById(following)!.pitches.single.midiNote, 63);
+    final playback = PlaybackPlan(editor, 120).notes;
+    expect(
+      playback
+          .where((n) => n.startMs >= 500 && n.startMs < 1000)
+          .map((n) => n.midi)
+          .toSet(),
+      {60, 63},
+    );
+    final notes = parseMidi(
+      MidiExport.encode(editor, 120),
+    ).where((m) => m.status & 0xf0 == 0x90).toList();
+    expect(
+      notes
+          .where((m) => m.tick >= 960 && m.tick < 1920)
+          .map((m) => m.data[0])
+          .toSet(),
+      {60, 63},
+    );
+    expect(notes.last.data[0], 63);
+  });
+
   test('MIDI ornaments every pitch of an arpeggiated chord', () {
     final editor = ScoreEditor(blankScore);
     final id = editor.append(

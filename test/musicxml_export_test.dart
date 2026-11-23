@@ -12,6 +12,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('MusicXML carries a sharp without repeating the written sign', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(
+        diatonicStep: 28,
+        midiNote: 61,
+        accidental: Accidental.sharp,
+      ),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Carry')),
+    );
+    final notes = xml
+        .findAllElements('note')
+        .where((note) => note.getElement('pitch') != null)
+        .toList();
+    expect(
+      notes.map((n) => n.getElement('pitch')!.getElement('alter')!.innerText),
+      ['1', '1'],
+    );
+    expect(notes.first.getElement('accidental')!.innerText, 'sharp');
+    expect(notes.last.getElement('accidental'), isNull);
+  });
+
   test('exports each ornament as MusicXML ornaments for every chord pitch', () {
     final editor = ScoreEditor(blankScore);
     final id = editor.append(
@@ -380,7 +413,8 @@ void main() {
     expect(notes[0].getElement('pitch')!.getElement('alter')!.innerText, '1');
     expect(notes[1].getElement('pitch')!.getElement('alter'), isNull);
     expect(notes[1].getElement('accidental')!.innerText, 'natural');
-    expect(notes[2].getElement('pitch')!.getElement('alter')!.innerText, '1');
+    expect(notes[2].getElement('pitch')!.getElement('alter'), isNull);
+    expect(notes[2].getElement('accidental'), isNull);
   });
 
   testWidgets('MusicXML menu saves, cancels and reports save errors', (

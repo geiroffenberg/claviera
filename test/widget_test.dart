@@ -7,6 +7,45 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('getting started is accessible and scrollable in landscape', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Menu'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).last,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Getting started'));
+    await tester.pumpAndSettle();
+    expect(find.text('Write notes'), findsOneWidget);
+    await tester.ensureVisible(find.text('Save and back up'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save and back up'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events,
+      hasLength(1),
+    );
+  });
+
   testWidgets('ornaments are available on notes and replace each other', (
     tester,
   ) async {

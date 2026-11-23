@@ -5,6 +5,7 @@ import 'package:claviera/main.dart';
 import 'package:claviera/models/score.dart';
 import 'package:claviera/notation/score_painter.dart';
 import 'package:claviera/notation/score_viewport.dart';
+import 'package:claviera/storage/projects.dart';
 import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +25,241 @@ const blank = Score(
 );
 
 void main() {
+  test('accidentals carry across voices on one staff and reset at the bar', () {
+    final editor = ScoreEditor(blank);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    const sharp = Pitch(
+      diatonicStep: 28,
+      midiNote: 61,
+      accidental: Accidental.sharp,
+    );
+    const natural = Pitch(
+      diatonicStep: 28,
+      midiNote: 60,
+      accidental: Accidental.natural,
+    );
+    final first = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: sharp,
+    );
+    final carried = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final octave = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 35, midiNote: 72),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: natural,
+    );
+    final nextBar = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+      measure: 1,
+    );
+    editor.append(voice: Voice.v2, staff: Staff.treble, duration: 960);
+    final otherVoice = editor.append(
+      voice: Voice.v2,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.append(voice: Voice.v3, staff: Staff.bass, duration: 960);
+    final otherStaff = editor.append(
+      voice: Voice.v3,
+      staff: Staff.bass,
+      duration: 960,
+      pitch: c,
+    );
+    int midi(int id) => editor.eventById(id)!.pitches.single.midiNote;
+    expect([midi(carried), midi(otherVoice), midi(otherStaff)], [61, 61, 60]);
+    expect([midi(octave), midi(nextBar)], [72, 60]);
+    expect(editor.previewMidi(28, Accidental.none, Staff.treble, 1920), 61);
+    expect(editor.previewMidi(28, Accidental.none, Staff.treble, 3840), 60);
+    final encoded = ProjectCodec.encode(
+      Project(name: 'Carry', tempo: 120, editor: editor),
+    );
+    final loaded = ProjectCodec.decode(encoded).editor;
+    expect(loaded.eventById(carried)!.pitches.single.midiNote, 61);
+    loaded.delete(first);
+    expect(loaded.eventById(carried)!.pitches.single.midiNote, 60);
+    editor.delete(first);
+    expect([midi(carried), midi(otherVoice)], [60, 60]);
+    editor.undo();
+    expect([midi(carried), midi(otherVoice)], [61, 61]);
+    editor.redo();
+    expect([midi(carried), midi(otherVoice)], [60, 60]);
+  });
+
+  test('naturals override key signatures until the next bar', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: 'Key',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        keySignature: 1,
+        measures: [Measure(), Measure()],
+      ),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: naturalF,
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 31, midiNote: 66),
+    );
+    final nextBar = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 31, midiNote: 66),
+      measure: 1,
+    );
+    expect(editor.eventById(next)!.pitches.single.midiNote, 65);
+    expect(editor.eventById(nextBar)!.pitches.single.midiNote, 66);
+    editor.setScoreSettings(beats: 4, unit: 4, key: -7);
+    expect(editor.eventById(next)!.pitches.single.midiNote, 65);
+    expect(editor.eventById(nextBar)!.pitches.single.midiNote, 64);
+  });
+
+  test('a later accidental replaces an earlier flat', () {
+    final editor = ScoreEditor(blank);
+    int append(Pitch pitch) => editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: pitch,
+    );
+    append(
+      const Pitch(diatonicStep: 28, midiNote: 59, accidental: Accidental.flat),
+    );
+    final flat = append(const Pitch(diatonicStep: 28, midiNote: 60));
+    append(
+      const Pitch(diatonicStep: 28, midiNote: 61, accidental: Accidental.sharp),
+    );
+    final sharp = append(const Pitch(diatonicStep: 28, midiNote: 60));
+    expect(editor.eventById(flat)!.pitches.single.midiNote, 59);
+    expect(editor.eventById(sharp)!.pitches.single.midiNote, 61);
+  });
+
+  test('simultaneous conflicting pitches are explicitly disambiguated', () {
+    final editor = ScoreEditor(blank);
+    final sharp = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(
+        diatonicStep: 28,
+        midiNote: 61,
+        accidental: Accidental.sharp,
+      ),
+    );
+    final natural = editor.append(
+      voice: Voice.v2,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    final later = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    expect(
+      editor.eventById(sharp)!.pitches.single.accidental,
+      Accidental.sharp,
+    );
+    expect(
+      editor.eventById(natural)!.pitches.single.accidental,
+      Accidental.natural,
+    );
+    expect(
+      editor.eventById(later)!.pitches.single.accidental,
+      Accidental.natural,
+    );
+    expect(editor.eventById(later)!.pitches.single.midiNote, 60);
+    editor.delete(sharp);
+    expect(
+      editor.eventById(natural)!.pitches.single.accidental,
+      Accidental.none,
+    );
+    expect(editor.eventById(later)!.pitches.single.accidental, Accidental.none);
+  });
+
+  test(
+    'a tied accidental keeps its pitch but does not carry into a new bar',
+    () {
+      final editor = ScoreEditor(blank);
+      editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      final tied = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 1920,
+        pitch: const Pitch(
+          diatonicStep: 28,
+          midiNote: 61,
+          accidental: Accidental.sharp,
+        ),
+      );
+      final next = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+        measure: 1,
+      );
+      expect(editor.eventById(tied)!.pitches.single.midiNote, 61);
+      expect(editor.score.measures[1].events.first.pitches.single.midiNote, 61);
+      expect(editor.eventById(next)!.pitches.single.midiNote, 60);
+    },
+  );
+
+  testWidgets('a tied accidental is drawn only on its attack', (tester) async {
+    int paragraphs(Accidental accidental) {
+      final editor = ScoreEditor(blank);
+      editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 1920,
+        pitch: Pitch(
+          diatonicStep: 28,
+          midiNote: accidental == Accidental.sharp ? 61 : 60,
+          accidental: accidental,
+        ),
+      );
+      final score = editor.score;
+      final canvas = TestRecordingCanvas();
+      ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      return canvas.invocations
+          .where((call) => call.invocation.memberName == #drawParagraph)
+          .length;
+    }
+
+    expect(paragraphs(Accidental.sharp) - paragraphs(Accidental.none), 1);
+  });
+
   test('key signature alteration order is correct for every major key', () {
     const sharpOrder = [3, 0, 4, 1, 5, 2, 6];
     const flatOrder = [6, 2, 5, 1, 4, 0, 3];
