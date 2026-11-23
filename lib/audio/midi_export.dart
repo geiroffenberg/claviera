@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
 class _MidiEvent {
@@ -17,10 +18,14 @@ class MidiExport {
       throw ArgumentError.value(initialTempo, 'initialTempo');
     }
     final timeline = ScoreTimeline(editor);
+    final dynamics = DynamicsTimeline(editor);
     final events = <_MidiEvent>[];
-    final extraChannels = [for (var i = 4; i < 16; i++) if (i != 9) i];
+    final extraChannels = [
+      for (var i = 4; i < 16; i++)
+        if (i != 9) i,
+    ];
     final usedChannels = <int>{};
-    final notes = <(int, int, int, Voice)>[];
+    final notes = <(int, int, int, Voice, int)>[];
     var offset = 0;
 
     void metadata(int outputTick, int measure) {
@@ -47,8 +52,19 @@ class MidiExport {
         power++;
       }
       final key = editor.keyAt(measure);
-      events.add(_MidiEvent(outputTick, 0, [0xff, 0x51, 3, micros >> 16, (micros >> 8) & 255, micros & 255]));
-      events.add(_MidiEvent(outputTick, 0, [0xff, 0x58, 4, time.beats, power, 24, 8]));
+      events.add(
+        _MidiEvent(outputTick, 0, [
+          0xff,
+          0x51,
+          3,
+          micros >> 16,
+          (micros >> 8) & 255,
+          micros & 255,
+        ]),
+      );
+      events.add(
+        _MidiEvent(outputTick, 0, [0xff, 0x58, 4, time.beats, power, 24, 8]),
+      );
       events.add(_MidiEvent(outputTick, 0, [0xff, 0x59, 2, key & 255, 0]));
     }
 
@@ -71,8 +87,13 @@ class MidiExport {
           if (pitch.midiNote < 0 || pitch.midiNote > 127) {
             throw StateError('Invalid MIDI pitch: ${pitch.midiNote}.');
           }
-          notes.add((offset + event.start - span.$1,
-              offset + event.end - span.$1, pitch.midiNote, event.voice));
+          notes.add((
+            offset + event.start - span.$1,
+            offset + event.end - span.$1,
+            pitch.midiNote,
+            event.voice,
+            dynamics.velocityAt(event.start),
+          ));
         }
       }
       offset += span.$2 - span.$1;
@@ -89,15 +110,18 @@ class MidiExport {
     for (final note in notes) {
       final playing = active.putIfAbsent(note.$3, () => {});
       playing.removeWhere((channel, end) => end <= note.$1);
-      final channel = [note.$4.index, ...extraChannels]
-          .where((c) => !playing.containsKey(c))
-          .firstOrNull;
+      final channel = [
+        note.$4.index,
+        ...extraChannels,
+      ].where((c) => !playing.containsKey(c)).firstOrNull;
       if (channel == null) {
-        throw StateError('Too many overlapping notes of the same pitch for MIDI channels.');
+        throw StateError(
+          'Too many overlapping notes of the same pitch for MIDI channels.',
+        );
       }
       playing[channel] = note.$2;
       usedChannels.add(channel);
-      events.add(_MidiEvent(note.$1, 2, [0x90 | channel, note.$3, 80]));
+      events.add(_MidiEvent(note.$1, 2, [0x90 | channel, note.$3, note.$5]));
       events.add(_MidiEvent(note.$2, 1, [0x80 | channel, note.$3, 0]));
     }
     for (final channel in usedChannels) {
@@ -128,12 +152,24 @@ class MidiExport {
     }
     track.addAll(vlq(offset - last));
     track.addAll([0xff, 0x2f, 0]);
-    List<int> u32(int value) =>
-        [value >> 24 & 255, value >> 16 & 255, value >> 8 & 255, value & 255];
+    List<int> u32(int value) => [
+      value >> 24 & 255,
+      value >> 16 & 255,
+      value >> 8 & 255,
+      value & 255,
+    ];
     return Uint8List.fromList([
-      ...'MThd'.codeUnits, ...u32(6), 0, 0, 0, 1,
-      ticksPerQuarter >> 8, ticksPerQuarter & 255,
-      ...'MTrk'.codeUnits, ...u32(track.length), ...track,
+      ...'MThd'.codeUnits,
+      ...u32(6),
+      0,
+      0,
+      0,
+      1,
+      ticksPerQuarter >> 8,
+      ticksPerQuarter & 255,
+      ...'MTrk'.codeUnits,
+      ...u32(track.length),
+      ...track,
     ]);
   }
 }

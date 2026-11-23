@@ -61,6 +61,8 @@ class _Snapshot {
     this.keys,
     this.repeatStarts,
     this.repeatEnds,
+    this.dynamics,
+    this.hairpins,
   );
   final List<VoiceEvent> events;
   final int measureCount;
@@ -73,6 +75,8 @@ class _Snapshot {
   final Map<int, int> keys;
   final Set<int> repeatStarts;
   final Set<int> repeatEnds;
+  final Map<int, DynamicMark> dynamics;
+  final List<Hairpin> hairpins;
 }
 
 class ScoreEditor {
@@ -103,6 +107,12 @@ class ScoreEditor {
         for (var i = 0; i < source.measures.length; i++)
           if (source.measures[i].repeatEnd) i,
       },
+      _dynamics = {
+        for (var i = 0; i < source.measures.length; i++)
+          for (final entry in source.measures[i].dynamics.entries)
+            source.measureStart(i) + entry.key: entry.value,
+      },
+      _hairpins = List.of(source.hairpins),
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
       for (final event in source.measures[measure].events) {
@@ -141,11 +151,30 @@ class ScoreEditor {
   Map<int, int> _keys;
   Set<int> _repeatStarts;
   Set<int> _repeatEnds;
+  Map<int, DynamicMark> _dynamics;
+  List<Hairpin> _hairpins;
   Set<int> get repeatStarts => Set.unmodifiable(_repeatStarts);
   Set<int> get repeatEnds => Set.unmodifiable(_repeatEnds);
   Map<int, int> get tempoChanges => Map.unmodifiable(_tempos);
   Map<int, TimeSignature> get timeChanges => Map.unmodifiable(_times);
   Map<int, int> get keyChanges => Map.unmodifiable(_keys);
+  Map<int, DynamicMark> get dynamicChanges => Map.unmodifiable(_dynamics);
+  List<Hairpin> get hairpins => List.unmodifiable(_hairpins);
+  Hairpin? get pendingHairpin =>
+      _hairpins.where((hairpin) => hairpin.end == null).firstOrNull;
+
+  DynamicMark? dynamicAt(int tick) {
+    DynamicMark? result;
+    var latest = -1;
+    for (final entry in _dynamics.entries) {
+      if (entry.key <= tick && entry.key > latest) {
+        latest = entry.key;
+        result = entry.value;
+      }
+    }
+    return result;
+  }
+
   int get ticksPerMeasure => _beats * ticksPerQuarter * 4 ~/ _unit;
   TimeSignature timeAt(int measure) {
     var time = TimeSignature(_beats, _unit);
@@ -236,6 +265,8 @@ class ScoreEditor {
     Map.of(_keys),
     Set.of(_repeatStarts),
     Set.of(_repeatEnds),
+    Map.of(_dynamics),
+    List.of(_hairpins),
   );
   void _restore(_Snapshot snapshot) {
     _events = List.of(snapshot.events);
@@ -249,6 +280,8 @@ class ScoreEditor {
     _keys = Map.of(snapshot.keys);
     _repeatStarts = Set.of(snapshot.repeatStarts);
     _repeatEnds = Set.of(snapshot.repeatEnds);
+    _dynamics = Map.of(snapshot.dynamics);
+    _hairpins = List.of(snapshot.hairpins);
   }
 
   void _commit(void Function() change) {
@@ -290,6 +323,65 @@ class ScoreEditor {
         _tempos[measure] = bpm;
       }
     });
+  }
+
+  void setDynamic(int tick, DynamicMark? mark) {
+    if (tick < 0 || tick >= measureStart(_measureCount) || tick % 60 != 0) {
+      throw const EditException('Invalid dynamic position.');
+    }
+    if (_dynamics[tick] == mark) return;
+    _commit(() {
+      if (mark == null) {
+        _dynamics.remove(tick);
+      } else {
+        _dynamics[tick] = mark;
+      }
+    });
+  }
+
+  void startHairpin(int tick, HairpinKind kind) {
+    if (pendingHairpin != null) {
+      throw const EditException(
+        'Finish or remove the unfinished hairpin first.',
+      );
+    }
+    if (tick < 0 || tick >= measureStart(_measureCount) || tick % 60 != 0) {
+      throw const EditException('Invalid hairpin position.');
+    }
+    if (_hairpins.any((h) => tick >= h.start && tick < h.end!)) {
+      throw const EditException('Hairpins cannot overlap.');
+    }
+    _commit(() => _hairpins.add(Hairpin(start: tick, kind: kind)));
+  }
+
+  void endHairpin(int tick) {
+    final pending = pendingHairpin;
+    if (pending == null) {
+      throw const EditException('No hairpin is being started.');
+    }
+    if (tick <= pending.start ||
+        tick >= measureStart(_measureCount) ||
+        tick % 60 != 0) {
+      throw const EditException('Choose an end after the hairpin start.');
+    }
+    if (_hairpins.any(
+      (h) => h.end != null && pending.start < h.end! && tick > h.start,
+    )) {
+      throw const EditException('Hairpins cannot overlap.');
+    }
+    _commit(() {
+      final index = _hairpins.indexOf(pending);
+      _hairpins[index] = Hairpin(
+        start: pending.start,
+        end: tick,
+        kind: pending.kind,
+      );
+    });
+  }
+
+  void deleteHairpin(int start) {
+    if (!_hairpins.any((h) => h.start == start)) return;
+    _commit(() => _hairpins.removeWhere((h) => h.start == start));
   }
 
   void setMeasureRepeats(
@@ -409,6 +501,36 @@ class ScoreEditor {
       }
     }
     final updated = <VoiceEvent>[];
+    final dynamics = <int, DynamicMark>{};
+    for (final entry in _dynamics.entries) {
+      final measure = measureAtTick(entry.key);
+      final offset = entry.key - oldStarts[measure];
+      if (offset >= newStarts[measure + 1] - newStarts[measure]) {
+        throw const EditException(
+          'A dynamic marking does not fit in the shorter bar. Move or remove it first.',
+        );
+      }
+      dynamics[newStarts[measure] + offset] = entry.value;
+    }
+    int remapHairpinTick(int tick) {
+      final measure = measureAtTick(tick);
+      final offset = tick - oldStarts[measure];
+      if (offset >= newStarts[measure + 1] - newStarts[measure]) {
+        throw const EditException(
+          'A hairpin endpoint does not fit in the shorter bar. Remove it first.',
+        );
+      }
+      return newStarts[measure] + offset;
+    }
+
+    final hairpins = [
+      for (final h in _hairpins)
+        Hairpin(
+          start: remapHairpinTick(h.start),
+          end: h.end == null ? null : remapHairpinTick(h.end!),
+          kind: h.kind,
+        ),
+    ];
     for (final event in events) {
       final measure = measureAtTick(event.start);
       final pitches = <Pitch>[];
@@ -443,6 +565,8 @@ class ScoreEditor {
       _times = Map.of(times);
       _keys = Map.of(keys);
       _events = updated;
+      _dynamics = dynamics;
+      _hairpins = hairpins;
     });
   }
 
@@ -753,6 +877,7 @@ class ScoreEditor {
       beatsPerMeasure: _beats,
       beatUnit: _unit,
       keySignature: _key,
+      hairpins: List.unmodifiable(_hairpins),
       measures: [
         for (var i = 0; i < measures.length; i++)
           Measure(
@@ -762,6 +887,12 @@ class ScoreEditor {
             keySignature: _keys[i],
             repeatStart: _repeatStarts.contains(i),
             repeatEnd: _repeatEnds.contains(i),
+            dynamics: {
+              for (final entry in _dynamics.entries)
+                if (entry.key >= measureStart(i) &&
+                    entry.key < measureStart(i + 1))
+                  entry.key - measureStart(i): entry.value,
+            },
           ),
       ],
     );

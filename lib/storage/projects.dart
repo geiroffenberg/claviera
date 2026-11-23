@@ -23,9 +23,12 @@ class ProjectCodec {
   static String encode(Project project) {
     final score = project.editor.score;
     return jsonEncode({
-      'version':
-          project.editor.repeatStarts.isNotEmpty ||
-              project.editor.repeatEnds.isNotEmpty
+      'version': project.editor.hairpins.isNotEmpty
+          ? 6
+          : project.editor.dynamicChanges.isNotEmpty
+          ? 5
+          : project.editor.repeatStarts.isNotEmpty ||
+                project.editor.repeatEnds.isNotEmpty
           ? 4
           : project.editor.timeChanges.isNotEmpty ||
                 project.editor.keyChanges.isNotEmpty
@@ -39,6 +42,24 @@ class ProjectCodec {
       'unit': score.beatUnit,
       'key': score.keySignature,
       'measureCount': project.editor.measureCount,
+      if (project.editor.hairpins.isNotEmpty)
+        'hairpins': [
+          for (final h
+              in (project.editor.hairpins.toList()
+                ..sort((a, b) => a.start.compareTo(b.start))))
+            {
+              'start': h.start,
+              if (h.end != null) 'end': h.end,
+              'kind': h.kind.name,
+            },
+        ],
+      if (project.editor.dynamicChanges.isNotEmpty)
+        'dynamics': [
+          for (final entry
+              in (project.editor.dynamicChanges.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'tick': entry.key, 'mark': entry.value.name},
+        ],
       if (project.editor.repeatStarts.isNotEmpty)
         'repeatStarts': project.editor.repeatStarts.toList()..sort(),
       if (project.editor.repeatEnds.isNotEmpty)
@@ -113,7 +134,9 @@ class ProjectCodec {
     if (raw['version'] != 1 &&
         raw['version'] != 2 &&
         raw['version'] != 3 &&
-        raw['version'] != 4) {
+        raw['version'] != 4 &&
+        raw['version'] != 5 &&
+        raw['version'] != 6) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -130,7 +153,10 @@ class ProjectCodec {
     final count = number(raw, 'measureCount', 1, 100000);
     final tempos = <int, int>{};
     if (raw['version'] == 2 ||
-        ((raw['version'] == 3 || raw['version'] == 4) &&
+        ((raw['version'] == 3 ||
+                raw['version'] == 4 ||
+                raw['version'] == 5 ||
+                raw['version'] == 6) &&
             raw.containsKey('tempoChanges'))) {
       final changes = raw['tempoChanges'];
       if (changes is! List) {
@@ -149,7 +175,10 @@ class ProjectCodec {
     }
     final times = <int, TimeSignature>{};
     final keys = <int, int>{};
-    if (raw['version'] == 3 || raw['version'] == 4) {
+    if (raw['version'] == 3 ||
+        raw['version'] == 4 ||
+        raw['version'] == 5 ||
+        raw['version'] == 6) {
       for (final field in ['timeChanges', 'keyChanges']) {
         final changes = raw[field];
         if (changes == null) continue;
@@ -191,8 +220,14 @@ class ProjectCodec {
       return marks;
     }
 
-    final starts = raw['version'] == 4 ? repeatMarks('repeatStarts') : <int>{};
-    final ends = raw['version'] == 4 ? repeatMarks('repeatEnds') : <int>{};
+    final starts =
+        raw['version'] == 4 || raw['version'] == 5 || raw['version'] == 6
+        ? repeatMarks('repeatStarts')
+        : <int>{};
+    final ends =
+        raw['version'] == 4 || raw['version'] == 5 || raw['version'] == 6
+        ? repeatMarks('repeatEnds')
+        : <int>{};
     final layout = Score(
       title: name,
       beatsPerMeasure: beats,
@@ -204,6 +239,72 @@ class ProjectCodec {
       ],
     );
     final totalTicks = layout.measureStart(count);
+    final dynamics = List.generate(count, (_) => <int, DynamicMark>{});
+    if (raw['version'] == 5 ||
+        (raw['version'] == 6 && raw.containsKey('dynamics'))) {
+      final marks = raw['dynamics'];
+      if (marks is! List) throw const FormatException('Invalid dynamics.');
+      for (final item in marks) {
+        if (item is! Map<String, dynamic>) {
+          throw const FormatException('Invalid dynamic.');
+        }
+        final tick = number(item, 'tick', 0, totalTicks - 1);
+        if (tick % 60 != 0) {
+          throw const FormatException('Invalid dynamic timing.');
+        }
+        final measure = layout.measureAtTick(tick);
+        final offset = tick - layout.measureStart(measure);
+        if (dynamics[measure].containsKey(offset)) {
+          throw const FormatException('Duplicate dynamic.');
+        }
+        dynamics[measure][offset] = enumValue(
+          DynamicMark.values,
+          item['mark'],
+          'dynamic',
+        );
+      }
+    }
+    final hairpins = <Hairpin>[];
+    if (raw['version'] == 6) {
+      final values = raw['hairpins'];
+      if (values is! List) throw const FormatException('Invalid hairpins.');
+      for (final item in values) {
+        if (item is! Map<String, dynamic>) {
+          throw const FormatException('Invalid hairpin.');
+        }
+        final start = number(item, 'start', 0, totalTicks - 1);
+        final end = item.containsKey('end')
+            ? number(item, 'end', start + 1, totalTicks - 1)
+            : null;
+        if (start % 60 != 0 || (end != null && end % 60 != 0)) {
+          throw const FormatException('Invalid hairpin timing.');
+        }
+        hairpins.add(
+          Hairpin(
+            start: start,
+            end: end,
+            kind: enumValue(HairpinKind.values, item['kind'], 'hairpin kind'),
+          ),
+        );
+      }
+      hairpins.sort((a, b) => a.start.compareTo(b.start));
+      final pending = hairpins.where((h) => h.end == null).toList();
+      final completed = hairpins.where((h) => h.end != null).toList();
+      if (pending.length > 1 ||
+          (pending.isNotEmpty &&
+              completed.any(
+                (h) =>
+                    pending.single.start >= h.start &&
+                    pending.single.start < h.end!,
+              ))) {
+        throw const FormatException('Overlapping or unfinished hairpins.');
+      }
+      for (var i = 1; i < completed.length; i++) {
+        if (completed[i - 1].end! > completed[i].start) {
+          throw const FormatException('Overlapping or unfinished hairpins.');
+        }
+      }
+    }
     final events = raw['events'];
     if (events is! List) throw const FormatException('Invalid events.');
     final measures = List.generate(count, (_) => <NotationEvent>[]);
@@ -252,6 +353,7 @@ class ProjectCodec {
       beatsPerMeasure: beats,
       beatUnit: unit,
       keySignature: key,
+      hairpins: hairpins,
       measures: [
         for (var i = 0; i < measures.length; i++)
           Measure(
@@ -261,6 +363,7 @@ class ProjectCodec {
             keySignature: keys[i],
             repeatStart: starts.contains(i),
             repeatEnd: ends.contains(i),
+            dynamics: dynamics[i],
           ),
       ],
     );

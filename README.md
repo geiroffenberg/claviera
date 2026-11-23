@@ -72,6 +72,27 @@ The app requests both landscape orientations at startup.
   rest. To add a chord pitch, select a note, switch to Write mode, enable Chord
   Stack, and enter a pitch. Switch Chord Stack off to append again.
 - Undo is on the right rail; Redo is in the menu.
+- Select a note or rest, or enter one in Write mode, then use **Dynamics** on
+  the left rail to add or change a marking from ppp to fff. A marking applies
+  to the whole piano from that score position until the next marking, regardless
+  of voice or staff. Tap a displayed marking to change or remove it, even if
+  its original note is deleted. Dynamics support Undo and Redo and are saved
+  with the project. Changing to a shorter meter is blocked if a marking would
+  no longer fit in its bar.
+  Playback and MIDI use approximate levels for new note attacks; an already
+  sounding piano note does not change volume. Unmarked scores retain the
+  original playback volume. MusicXML and PDF include the markings.
+- To add a crescendo or diminuendo, select or enter its first note or rest and
+  choose **Crescendo start** or **Diminuendo start** in Dynamics. The short red
+  hairpin is unfinished; select a later note or rest and choose **Set end** in
+  Dynamics. Only one hairpin can be unfinished at a time; completed hairpins
+  may not overlap. Tap a hairpin to delete it. Hairpins are saved, support
+  Undo and Redo, and apply to the whole piano. Finish or remove an unfinished
+  hairpin before playback or export.
+  Playback and MIDI interpolate the volume of new note attacks to a dynamic
+  at the end, or by one dynamic level if there is no ending mark; that level
+  remains in effect until another dynamic or hairpin. Dynamics inside a
+  hairpin act as intermediate targets. MusicXML and PDF contain the hairpin.
 - Choose **Export PDF** in the menu, then select a destination in Android's
   file picker. The score is arranged into systems on A4 portrait pages.
   PDF pages are rendered as images; dense passages may need manual review

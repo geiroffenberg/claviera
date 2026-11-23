@@ -12,6 +12,9 @@ class MusicXmlExport {
     if (initialTempo < 30 || initialTempo > 240) {
       throw ArgumentError.value(initialTempo, 'initialTempo');
     }
+    if (editor.pendingHairpin != null) {
+      throw StateError('Finish or remove the unfinished hairpin first.');
+    }
     final score = editor.score;
     final xml = XmlBuilder();
 
@@ -195,6 +198,70 @@ class MusicXmlExport {
                           ),
                         );
                         xml.element('sound', attributes: {'tempo': '$tempo'});
+                      },
+                    );
+                  }
+                  final dynamics = measure.dynamics.entries.toList()
+                    ..sort((a, b) => a.key.compareTo(b.key));
+                  for (final dynamicMark in dynamics) {
+                    xml.element(
+                      'direction',
+                      attributes: {'placement': 'below'},
+                      nest: () {
+                        xml.element(
+                          'direction-type',
+                          nest: () => xml.element(
+                            'dynamics',
+                            nest: () => xml.element(dynamicMark.value.name),
+                          ),
+                        );
+                        if (dynamicMark.key != 0) {
+                          xml.element(
+                            'offset',
+                            attributes: {'sound': 'yes'},
+                            nest: dynamicMark.key.toString(),
+                          );
+                        }
+                        text('staff', 1);
+                        xml.element(
+                          'sound',
+                          attributes: {
+                            'dynamics':
+                                '${dynamicMark.value.velocity * 100 / 90}',
+                          },
+                        );
+                      },
+                    );
+                  }
+                  final measureStart = score.measureStart(index);
+                  final measureEnd = score.measureStart(index + 1);
+                  final wedges =
+                      <(int, String)>[
+                        for (final h in score.hairpins) ...[
+                          if (h.start >= measureStart && h.start < measureEnd)
+                            (h.start - measureStart, h.kind.name),
+                          if (h.end! >= measureStart && h.end! < measureEnd)
+                            (h.end! - measureStart, 'stop'),
+                        ],
+                      ]..sort((a, b) {
+                        final order = a.$1.compareTo(b.$1);
+                        if (order != 0) return order;
+                        return a.$2 == 'stop' ? -1 : 1;
+                      });
+                  for (final wedge in wedges) {
+                    xml.element(
+                      'direction',
+                      attributes: {'placement': 'below'},
+                      nest: () {
+                        xml.element(
+                          'direction-type',
+                          nest: () => xml.element(
+                            'wedge',
+                            attributes: {'type': wedge.$2, 'number': '1'},
+                          ),
+                        );
+                        if (wedge.$1 != 0) text('offset', wedge.$1);
+                        text('staff', 1);
                       },
                     );
                   }

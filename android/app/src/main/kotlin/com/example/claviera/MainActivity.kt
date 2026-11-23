@@ -156,8 +156,10 @@ class MainActivity : FlutterActivity() {
                                 val midi = it["midi"]
                                 val start = it["startMs"]
                                 val end = it["endMs"]
+                                val volume = it["volume"]
                                 midi == null || midi !in 0..127 || start == null ||
-                                    end == null || start < 0 || end <= start
+                                    end == null || start < 0 || end <= start ||
+                                    volume == null || volume !in 1..127
                             }) {
                             result.error("invalid_score", "Invalid score playback data.", null)
                         } else if (pool == null || pendingInit != null || loadingFailed) {
@@ -338,8 +340,9 @@ class MainActivity : FlutterActivity() {
             val rate = 2.0.pow((midi - root) / 12.0).toFloat()
             val start = note.getValue("startMs").toLong()
             val end = note.getValue("endMs").toLong()
+            val volume = note.getValue("volume") / 127f
             val playTask = Runnable {
-                val sound = pool?.play(samples.getValue(root), 1f, 1f, 1, 0, rate) ?: 0
+                val sound = pool?.play(samples.getValue(root), volume, volume, 1, 0, rate) ?: 0
                 if (sound == 0) {
                     stopScore()
                     channel?.invokeMethod("playbackError", "Unable to play a score note.")

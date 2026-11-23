@@ -1,17 +1,20 @@
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
 class PlaybackNote {
-  const PlaybackNote(this.midi, this.startMs, this.endMs);
+  const PlaybackNote(this.midi, this.startMs, this.endMs, {this.volume = 127});
   final int midi;
   final int startMs;
   final int endMs;
+  final int volume;
 
   Map<String, int> toMap() => {
     'midi': midi,
     'startMs': startMs,
     'endMs': endMs,
+    'volume': volume,
   };
 }
 
@@ -38,6 +41,7 @@ class PlaybackPlan {
     }
 
     final timeline = ScoreTimeline(editor);
+    final dynamics = DynamicsTimeline(editor);
 
     var elapsed = 0.0;
     for (final span in timeline.spans) {
@@ -52,7 +56,16 @@ class PlaybackPlan {
               'MIDI note ${pitch.midiNote} is outside the sample playback range (10–127).',
             );
           }
-          notes.add(PlaybackNote(pitch.midiNote, start, end));
+          notes.add(
+            PlaybackNote(
+              pitch.midiNote,
+              start,
+              end,
+              volume: dynamics.hasExpression
+                  ? dynamics.velocityAt(event.start)
+                  : 127,
+            ),
+          );
         }
       }
       elapsed += millis(span.$2) - base;

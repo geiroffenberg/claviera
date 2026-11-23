@@ -98,6 +98,61 @@ class ScorePainter extends CustomPainter {
       barX(score, score.measures.length, s) + 2 * s;
   static double heightFor(double s) => 32 * s;
 
+  static TextPainter _dynamicText(DynamicMark mark, double s) => TextPainter(
+    text: TextSpan(
+      text: mark.name,
+      style: TextStyle(
+        fontFamily: 'serif',
+        fontSize: 1.8 * s,
+        fontWeight: FontWeight.bold,
+        fontStyle: FontStyle.italic,
+        color: const Color(0xff252c2a),
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+
+  static Rect dynamicBounds(Score score, int measure, int tick, double s) {
+    final mark = score.measures[measure].dynamics[tick]!;
+    final text = _dynamicText(mark, s);
+    final x = eventXFor(score, measure, tick, s);
+    return Rect.fromCenter(
+      center: Offset(x, 16 * s),
+      width: text.width,
+      height: text.height,
+    );
+  }
+
+  static Rect hairpinBounds(Score score, Hairpin hairpin, double s) {
+    final total = score.measureStart(score.measures.length);
+    double xAt(int tick) {
+      if (tick >= total) return barX(score, score.measures.length, s) - .3 * s;
+      final measure = score.measureAtTick(tick);
+      return eventXFor(score, measure, tick - score.measureStart(measure), s);
+    }
+
+    final start = hairpin.start.clamp(0, total);
+    final end = hairpin.end?.clamp(0, total);
+    var left = xAt(start);
+    var right = end == null ? left + 3 * s : xAt(end);
+    if (hairpin.start >= 0 && start < total) {
+      final measure = score.measureAtTick(start);
+      final offset = start - score.measureStart(measure);
+      if (score.measures[measure].dynamics.containsKey(offset)) {
+        left += dynamicBounds(score, measure, offset, s).width / 2 + .3 * s;
+      }
+    }
+    if (end != null && hairpin.end! < total) {
+      final measure = score.measureAtTick(end);
+      final offset = end - score.measureStart(measure);
+      if (score.measures[measure].dynamics.containsKey(offset)) {
+        right -= dynamicBounds(score, measure, offset, s).width / 2 + .3 * s;
+      }
+    }
+    if (right < left + .6 * s) right = left + .6 * s;
+    return Rect.fromLTRB(left, 17.3 * s, right, 18.7 * s);
+  }
+
   static double eventX(
     int measure,
     int tick,
@@ -416,6 +471,48 @@ class ScorePainter extends CustomPainter {
       }
       for (final group in groups) {
         _drawBeams(canvas, m, group, beamed[group.first]!);
+      }
+      for (final entry in score.measures[m].dynamics.entries) {
+        final text = _dynamicText(entry.value, _s);
+        final bounds = dynamicBounds(score, m, entry.key, _s);
+        text.paint(canvas, bounds.topLeft);
+      }
+    }
+    final totalTicks = score.measureStart(score.measures.length);
+    for (final hairpin in score.hairpins) {
+      if (hairpin.start >= totalTicks ||
+          (hairpin.end != null && hairpin.end! <= 0)) {
+        continue;
+      }
+      final bounds = hairpinBounds(score, hairpin, _s);
+      final paint = Paint()
+        ..color = hairpin.end == null
+            ? const Color(0xffc63838)
+            : const Color(0xff252c2a)
+        ..strokeWidth = 1.2;
+      final startProgress = hairpin.end == null
+          ? 0.0
+          : ((0 - hairpin.start) / (hairpin.end! - hairpin.start)).clamp(
+              0.0,
+              1.0,
+            );
+      final endProgress = hairpin.end == null
+          ? 1.0
+          : ((totalTicks - hairpin.start) / (hairpin.end! - hairpin.start))
+                .clamp(0.0, 1.0);
+      final leftOpen = hairpin.kind == HairpinKind.crescendo
+          ? startProgress
+          : 1 - startProgress;
+      final rightOpen = hairpin.kind == HairpinKind.crescendo
+          ? endProgress
+          : 1 - endProgress;
+      final y = bounds.center.dy;
+      for (final sign in [-1, 1]) {
+        canvas.drawLine(
+          Offset(bounds.left, y + sign * .7 * _s * leftOpen),
+          Offset(bounds.right, y + sign * .7 * _s * rightOpen),
+          paint,
+        );
       }
     }
     if (cursorTick != null) {

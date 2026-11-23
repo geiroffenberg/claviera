@@ -29,12 +29,23 @@ class PrintLayout {
       beatsPerMeasure: time.beats,
       beatUnit: time.unit,
       keySignature: score.keyAt(first),
+      hairpins: [
+        for (final hairpin in score.hairpins)
+          if (hairpin.start < score.measureStart(end) &&
+              hairpin.end! > score.measureStart(first))
+            Hairpin(
+              start: hairpin.start - score.measureStart(first),
+              end: hairpin.end! - score.measureStart(first),
+              kind: hairpin.kind,
+            ),
+      ],
       measures: [
         Measure(
           events: firstBar.events,
           tempo: firstBar.tempo,
           repeatStart: firstBar.repeatStart,
           repeatEnd: firstBar.repeatEnd,
+          dynamics: firstBar.dynamics,
         ),
         ...score.measures.skip(first + 1).take(end - first - 1),
       ],
@@ -42,6 +53,9 @@ class PrintLayout {
   }
 
   static List<PrintSystem> systems(Score score) {
+    if (score.hairpins.any((h) => h.end == null)) {
+      throw StateError('Finish or remove the unfinished hairpin first.');
+    }
     final systems = <PrintSystem>[];
     var first = 0;
     while (first < score.measures.length) {

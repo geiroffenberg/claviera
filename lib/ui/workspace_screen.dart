@@ -50,6 +50,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Offset? gestureStart;
   bool settingsGesture = false;
   int? tempoGesture;
+  int? dynamicGesture;
+  int? hairpinGesture;
   bool playing = false;
   bool saving = false;
   bool exportingPdf = false;
@@ -855,6 +857,125 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     preview = null;
   });
 
+  Future<void> _dynamicPalette(int tick) async {
+    final pending = editor.pendingHairpin;
+    if (pending != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Finish hairpin'),
+          content: const Text('Set the end at the selected note or rest.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _perform(() => editor.endHairpin(tick));
+              },
+              child: const Text('Set end'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final current = editor.dynamicChanges[tick];
+    final chosen = await showDialog<DynamicMark?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dynamics (both staves)'),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final mark in DynamicMark.values)
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: ChoiceChip(
+                          label: Text(mark.name),
+                          selected: current == mark,
+                          showCheckmark: false,
+                          visualDensity: VisualDensity.compact,
+                          labelPadding: EdgeInsets.zero,
+                          onSelected: (_) => Navigator.pop(context, mark),
+                        ),
+                      ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (kind, label) in [
+                      (HairpinKind.crescendo, 'Crescendo start'),
+                      (HairpinKind.diminuendo, 'Diminuendo start'),
+                    ])
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _perform(() => editor.startHairpin(tick, kind));
+                        },
+                        child: Text(label),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          if (current != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _perform(() => editor.setDynamic(tick, null));
+              },
+              child: const Text('Remove'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || chosen == null) return;
+    _perform(() => editor.setDynamic(tick, chosen));
+  }
+
+  Future<void> _hairpinOptions(int start) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hairpin'),
+        content: const Text('Delete this hairpin?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _perform(() => editor.deleteHairpin(start));
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _selectVoice(Voice value) => setState(() {
     piano.stop();
     voice = value;
@@ -916,6 +1037,29 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   void _startGesture(Offset position, Score score) {
     gestureStart = position;
+    for (var measure = 0; measure < score.measures.length; measure++) {
+      for (final tick in score.measures[measure].dynamics.keys) {
+        if (ScorePainter.dynamicBounds(
+          score,
+          measure,
+          tick,
+          10,
+        ).inflate(6).contains(position)) {
+          dynamicGesture = score.measureStart(measure) + tick;
+          return;
+        }
+      }
+      for (final hairpin in score.hairpins) {
+        if (ScorePainter.hairpinBounds(
+          score,
+          hairpin,
+          10,
+        ).inflate(6).contains(position)) {
+          hairpinGesture = hairpin.start;
+          return;
+        }
+      }
+    }
     if (position.dy >= 45 && position.dy <= 75) {
       for (var index = 0; index < score.measures.length; index++) {
         if ((position.dx - ScorePainter.barX(score, index, 10)).abs() <= 20) {
@@ -950,7 +1094,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   void _updateGesture(Offset position) {
-    if (gestureStart == null || settingsGesture || tempoGesture != null) return;
+    if (gestureStart == null ||
+        settingsGesture ||
+        tempoGesture != null ||
+        dynamicGesture != null ||
+        hairpinGesture != null) {
+      return;
+    }
     if (mode == WorkspaceMode.write && !rest && previewStaff != null) {
       setState(() {
         if (!(chordStack && selected != null && !selected!.isRest)) {
@@ -979,12 +1129,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     gestureStart = null;
     settingsGesture = false;
     tempoGesture = null;
+    dynamicGesture = null;
+    hairpinGesture = null;
     preview = null;
     previewStaff = null;
   });
 
   void _endGesture(Offset position) {
     if (gestureStart == null) return;
+    if (hairpinGesture != null) {
+      final start = hairpinGesture!;
+      final isTap = (position - gestureStart!).distance < 15;
+      _cancelGesture();
+      if (isTap) _hairpinOptions(start);
+      return;
+    }
+    if (dynamicGesture != null) {
+      final tick = dynamicGesture!;
+      final isTap = (position - gestureStart!).distance < 15;
+      _cancelGesture();
+      if (isTap) _dynamicPalette(tick);
+      return;
+    }
     if (tempoGesture != null) {
       final measure = tempoGesture!;
       final isTap = (position - gestureStart!).distance < 15;
@@ -1195,6 +1361,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             rest ? Icons.hotel : Icons.music_note,
                             () => setState(() => rest = !rest),
                             selected: rest,
+                          ),
+                          _button(
+                            'Dynamics',
+                            Icons.graphic_eq,
+                            event == null
+                                ? null
+                                : () => _dynamicPalette(event.start),
                           ),
                           for (final value in NoteValue.values)
                             _durationButton(value),

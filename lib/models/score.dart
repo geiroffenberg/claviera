@@ -7,6 +7,30 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
+enum DynamicMark {
+  ppp(32),
+  pp(42),
+  p(52),
+  mp(64),
+  mf(80),
+  f(96),
+  ff(110),
+  fff(124);
+
+  const DynamicMark(this.velocity);
+  final int velocity;
+}
+
+enum HairpinKind { crescendo, diminuendo }
+
+class Hairpin {
+  const Hairpin({required this.start, required this.kind, this.end});
+
+  final int start;
+  final int? end;
+  final HairpinKind kind;
+}
+
 class TimeSignature {
   const TimeSignature(this.beats, this.unit)
     : assert(beats > 0),
@@ -112,6 +136,7 @@ class Measure {
     this.keySignature,
     this.repeatStart = false,
     this.repeatEnd = false,
+    this.dynamics = const {},
   });
 
   final List<NotationEvent> events;
@@ -120,6 +145,7 @@ class Measure {
   final int? keySignature;
   final bool repeatStart;
   final bool repeatEnd;
+  final Map<int, DynamicMark> dynamics;
 }
 
 class Score {
@@ -129,6 +155,7 @@ class Score {
     required this.beatUnit,
     required this.measures,
     this.keySignature = 0,
+    this.hairpins = const [],
   }) : assert(beatsPerMeasure > 0),
        assert(keySignature >= -7 && keySignature <= 7),
        assert(
@@ -144,6 +171,7 @@ class Score {
   final int beatUnit;
   final int keySignature;
   final List<Measure> measures;
+  final List<Hairpin> hairpins;
 
   int get ticksPerMeasure => beatsPerMeasure * ticksPerQuarter * 4 ~/ beatUnit;
 
