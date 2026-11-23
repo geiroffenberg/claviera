@@ -42,6 +42,54 @@ void main() {
     expect(plan.durationMs, 10500);
   });
 
+  test('starting within a repeat follows its written destination', () {
+    final editor = fixture();
+    editor.setMeasureRepeats(0, start: true, end: false);
+    editor.setMeasureRepeats(2, start: false, end: true);
+    final plan = PlaybackPlan(editor, 120, startMeasure: 1);
+    expect(plan.notes.map((n) => (n.midi, n.startMs)), [
+      (61, 0),
+      (62, 2000),
+      (60, 4000),
+      (61, 6000),
+      (62, 8000),
+      (63, 10000),
+    ]);
+    expect(plan.frameAt(0)!.measure, 1);
+    expect(plan.frameAt(4000)!.measure, 0);
+    expect(plan.frameAt(4000)!.segments, hasLength(1));
+  });
+
+  test('a tied-in note stays silent until a repeat reaches its attack', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 29, midiNote: 62),
+      measure: 2,
+    );
+    editor.setMeasureRepeats(0, start: true, end: false);
+    editor.setMeasureRepeats(2, start: false, end: true);
+    final plan = PlaybackPlan(editor, 120, startMeasure: 1);
+    expect(plan.notes.map((n) => (n.midi, n.startMs, n.endMs)), [
+      (62, 2000, 2500),
+      (60, 5500, 6500),
+      (62, 8000, 8500),
+    ]);
+    expect(plan.frameAt(0)!.segments, isEmpty);
+    expect(plan.frameAt(5500)!.segments, hasLength(1));
+    expect(plan.frameAt(6000)!.measure, 1);
+    expect(plan.frameAt(6000)!.segments, hasLength(1));
+  });
+
   test(
     'end repeat without start goes to beginning including empty bar tails',
     () {
@@ -83,6 +131,19 @@ void main() {
       (62, 8000, 9000),
       (63, 11000, 12000),
     ]);
+    for (final (time, measure) in [
+      (0, 0),
+      (2000, 1),
+      (3500, 2),
+      (6500, 1),
+      (8000, 2),
+      (11000, 3),
+    ]) {
+      final frame = plan.frameAt(time)!;
+      expect(frame.measure, measure);
+      expect(frame.segments.single.measure, measure);
+    }
+    expect(plan.frameAt(4500)!.segments, isEmpty);
   });
 
   test('repeat boundary ties and nested starts show explicit errors', () {

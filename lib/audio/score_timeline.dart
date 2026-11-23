@@ -2,7 +2,13 @@ import '../editor/score_editor.dart';
 import '../models/score.dart';
 
 class ScoreTimeline {
-  ScoreTimeline(ScoreEditor editor) {
+  ScoreTimeline(ScoreEditor editor, {int startMeasure = 0}) {
+    RangeError.checkValueInInterval(
+      startMeasure,
+      0,
+      editor.measureCount - 1,
+      'startMeasure',
+    );
     events = [for (final voice in Voice.values) ...editor.eventsFor(voice)];
     final starts = editor.repeatStarts;
     final ends = editor.repeatEnds;
@@ -42,7 +48,7 @@ class ScoreTimeline {
       }
     }
     final repeated = <int>{};
-    var cursor = 0;
+    var cursor = editor.measureStart(startMeasure);
     while (cursor < lastTick) {
       int? nextEnd;
       for (final end in ends) {

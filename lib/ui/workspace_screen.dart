@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../audio/piano_preview.dart';
@@ -28,7 +29,7 @@ class WorkspaceScreen extends StatefulWidget {
 }
 
 class _WorkspaceScreenState extends State<WorkspaceScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   ScoreEditor editor = ScoreEditor(blankScore);
   late final ProjectStore projectStore;
   String projectName = 'Untitled score';
@@ -52,12 +53,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   int? tempoGesture;
   int? dynamicGesture;
   int? hairpinGesture;
+  int? barGesture;
   bool playing = false;
   bool saving = false;
   bool exportingPdf = false;
   bool exportingMidi = false;
   bool exportingMusicXml = false;
   int playbackRevision = 0;
+  late final Ticker playbackTicker;
+  PlaybackPlan? playbackPlan;
+  PlaybackFrame? playbackFrame;
   int tempo = 120;
 
   VoiceEvent? get selected => editor.eventById(selectedId);
@@ -177,6 +182,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   @override
   void initState() {
     super.initState();
+    playbackTicker = createTicker(_updatePlayback);
     projectStore = widget.projectStore ?? ProjectStore();
     savedState = ProjectCodec.encode(project);
     WidgetsBinding.instance.addObserver(this);
@@ -410,11 +416,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     if (state != AppLifecycleState.resumed) {
       piano.stop();
       if (playing) {
-        piano.stopScore();
-        setState(() {
-          playbackRevision++;
-          playing = false;
-        });
+        _stopScore();
       }
     }
   }
@@ -422,6 +424,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    playbackTicker.dispose();
     piano.dispose();
     super.dispose();
   }
@@ -591,7 +594,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   Future<void> _playScore() async {
     try {
-      final plan = PlaybackPlan(editor, tempo);
+      final plan = PlaybackPlan(editor, tempo, startMeasure: selectedMeasure);
+      if (plan.durationMs == 0 && selectedMeasure > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No notes or rests at or after this bar.')),
+        );
+        return;
+      }
       piano.stop();
       final revision = ++playbackRevision;
       setState(() => playing = true);
@@ -599,12 +608,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         plan,
         onFinished: () {
           if (mounted && revision == playbackRevision) {
-            setState(() => playing = false);
+            _finishPlayback();
           }
         },
       );
-      if (!started && mounted && revision == playbackRevision) {
-        setState(() => playing = false);
+      if (mounted && revision == playbackRevision) {
+        if (started) {
+          setState(() {
+            playbackPlan = plan;
+            playbackFrame = plan.frameAt(0);
+          });
+          playbackTicker.start();
+        } else {
+          _finishPlayback();
+        }
       }
     } on StateError catch (error) {
       if (!mounted) return;
@@ -615,9 +632,25 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   void _stopScore() {
-    playbackRevision++;
     piano.stopScore();
-    setState(() => playing = false);
+    _finishPlayback();
+  }
+
+  void _finishPlayback() {
+    playbackRevision++;
+    playbackTicker.stop();
+    setState(() {
+      playing = false;
+      playbackPlan = null;
+      playbackFrame = null;
+    });
+  }
+
+  void _updatePlayback(Duration elapsed) {
+    final frame = playbackPlan?.frameAt(elapsed.inMilliseconds);
+    if (frame != playbackFrame) {
+      setState(() => playbackFrame = frame);
+    }
   }
 
   Future<void> _setTempo() async {
@@ -1080,6 +1113,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           measure: score.measures.indexWhere((m) => m.events.contains(hit)),
         );
       } else {
+        if (position.dy >= 50 && position.dy < 300) {
+          for (var measure = 0; measure < score.measures.length; measure++) {
+            if (position.dx >= ScorePainter.barX(score, measure, 10) &&
+                position.dx < ScorePainter.barX(score, measure + 1, 10)) {
+              barGesture = measure;
+              break;
+            }
+          }
+        }
         _select(null);
       }
     } else if (!rest) {
@@ -1131,6 +1173,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     tempoGesture = null;
     dynamicGesture = null;
     hairpinGesture = null;
+    barGesture = null;
     preview = null;
     previewStaff = null;
   });
@@ -1167,8 +1210,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     final staff = previewStaff ?? ScorePainter.staffAt(position.dy, 10);
     final pitch = preview ?? ScorePainter.pitchAt(position.dy, staff, 10);
     final moved = (position.dy - gestureStart!.dy).abs() > 5;
+    final bar = barGesture;
+    final isTap = (position - gestureStart!).distance < 15;
     _cancelGesture();
     if (mode == WorkspaceMode.edit) {
+      if (bar != null && isTap) {
+        _selectMeasure(bar);
+        return;
+      }
       if (moved && selected != null && !selected!.isRest) {
         final accidental = selected!.pitches[pitchIndex].accidental;
         final midi = soundingMidi(
@@ -1434,6 +1483,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                       ),
                                     ),
                                     IconButton(
+                                      tooltip: 'Go to start',
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.skip_previous),
+                                      onPressed: !playing && selectedMeasure > 0
+                                          ? () => _selectMeasure(0)
+                                          : null,
+                                    ),
+                                    IconButton(
                                       tooltip: playing
                                           ? 'Stop playback'
                                           : 'Play score',
@@ -1471,19 +1528,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                       tooltip: 'Previous bar',
                                       visualDensity: VisualDensity.compact,
                                       icon: const Icon(Icons.chevron_left),
-                                      onPressed: selectedMeasure > 0
+                                      onPressed: !playing && selectedMeasure > 0
                                           ? () => _selectMeasure(
                                               selectedMeasure - 1,
                                             )
                                           : null,
                                     ),
-                                    Text('Bar ${selectedMeasure + 1}'),
+                                    Text(
+                                      'Bar ${(playbackFrame?.measure ?? selectedMeasure) + 1}',
+                                    ),
                                     IconButton(
                                       tooltip: 'Next bar',
                                       visualDensity: VisualDensity.compact,
                                       icon: const Icon(Icons.chevron_right),
                                       onPressed:
-                                          selectedMeasure + 1 <
+                                          !playing && selectedMeasure + 1 <
                                               score.measures.length
                                           ? () => _selectMeasure(
                                               selectedMeasure + 1,
@@ -1509,11 +1568,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                 ignoring: playing,
                                 child: ScoreViewport(
                                   score: score,
-                                  selectedEvent: renderedSelection,
+                                  selectedEvent: playing
+                                      ? null
+                                      : renderedSelection,
                                   selectedPitch: pitchIndex,
-                                  selectedMeasure: selectedMeasure,
-                                  cursorTick: cursor,
-                                  previewPitch: preview,
+                                  selectedMeasure:
+                                      playbackFrame?.measure ?? selectedMeasure,
+                                  cursorTick: playing ? null : cursor,
+                                  playingSegments:
+                                      playbackFrame?.segments ?? const {},
+                                  previewPitch: playing ? null : preview,
                                   previewStaff: previewStaff,
                                   previewDuration: duration,
                                   previewVoice: voice,

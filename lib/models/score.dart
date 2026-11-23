@@ -3,6 +3,8 @@ const int ticksPerQuarter = 960;
 
 enum Voice { v1, v2, v3, v4 }
 
+typedef PlaybackSegment = ({int measure, int startTick, int eventId});
+
 enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }

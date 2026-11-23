@@ -29,7 +29,8 @@ The app requests both landscape orientations at startup.
 - Use the **Bar** arrows in the header to choose the bar to write in. The
   selected bar is shaded and the green cursor marks the next entry point for
   the active voice in that bar. Each bar is numbered above its starting
-  barline. Changing bars does not modify the score.
+  barline. In Edit mode, tap inside a bar to select it; tapping a note selects
+  both the note and its bar. Changing bars does not modify the score.
 - In Write mode, touch and drag vertically to preview a pitch, then release to
   append it at the green cursor, regardless of horizontal touch position. In
   Rest mode, touch the staff to append a rest. Drag with two fingers to scroll
@@ -40,11 +41,16 @@ The app requests both landscape orientations at startup.
 - On Android, the piano preview plays the pitch while entering or dragging a
   note. Use the speaker button in the header to mute it. It is an experimental
   single-note preview; device latency may vary.
-- Press **Play** to play the whole score from the beginning, or **Stop** to
-  stop immediately. Playback includes all voices and chord pitches; empty space
+- Press **Play** to play from the selected bar, or **Stop** to stop immediately.
+  Use **Go to start** beside Play to select the first bar. Notes tied in from
+  an earlier bar are silent until their next attack. Playback follows written
+  repeats, which can jump back before the selected bar.
+  Playback includes all voices and chord pitches; empty space
   and rests are silent. Tap the BPM value to set a score-wide tempo from 30 to
   240 quarter notes per minute (default 120). Editing is disabled while
   playing, and playback stops at the last event or when the app is backgrounded.
+  The current bar is shaded and sounding notes are highlighted; the previous
+  editing selection returns when playback stops.
   The speaker button mutes note-entry preview only, not score playback.
 - Tap a bar number to open **Bar settings**, then choose **Tempo** or
   **Key and time signature**. Tempo changes apply until the next tempo
@@ -180,7 +186,6 @@ The Android preview and experimental playback use SoundPool and a small set of C
 derived from the Versilian Community Sample Library. See the accompanying
 `android/app/src/main/assets/piano/README.txt` for sources and processing.
 Samples are at most three seconds long, so longer held notes decay or end before
-their notated duration. SoundPool timing and pitch-shifted samples are
-provisional; playback supports at most 64 simultaneous notes and does not yet
-provide a playhead. The sample engine supports MIDI
-notes 10–127.
+their notated duration; highlighting follows the notated duration. SoundPool
+timing and pitch-shifted samples are provisional; playback supports at most 64
+simultaneous notes. The sample engine supports MIDI notes 10–127.

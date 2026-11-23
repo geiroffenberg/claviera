@@ -4,6 +4,8 @@ import 'package:claviera/audio/piano_preview.dart';
 import 'package:claviera/audio/score_playback.dart';
 import 'package:claviera/editor/score_editor.dart';
 import 'package:claviera/models/score.dart';
+import 'package:claviera/notation/score_painter.dart';
+import 'package:claviera/notation/score_viewport.dart';
 import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,6 +77,48 @@ void main() {
     expect(() => PlaybackPlan(editor, 0), throwsArgumentError);
   });
 
+  test('visual frames follow sounding voices and bar boundaries', () {
+    final editor = ScoreEditor(fixture);
+    final score = editor.score;
+    PlaybackSegment segment(int measure, Voice voice, int tick) {
+      final event = score.measures[measure].events.singleWhere(
+        (e) => e.voice == voice && e.startTick == tick && !e.isRest,
+      );
+      return (measure: measure, startTick: tick, eventId: event.eventId!);
+    }
+
+    final chord = segment(0, Voice.v1, 0);
+    final bass = segment(0, Voice.v2, 480);
+    final last = segment(2, Voice.v1, 0);
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.frameAt(-1), isNull);
+    expect(plan.frameAt(0)!.segments, {chord});
+    expect(plan.frameAt(250)!.segments, {chord, bass});
+    expect(plan.frameAt(500)!.segments, {bass});
+    expect(plan.frameAt(1250)!.segments, isEmpty);
+    expect(plan.frameAt(2000)!.measure, 1);
+    expect(plan.frameAt(2000)!.segments, isEmpty);
+    expect(plan.frameAt(4000)!.measure, 2);
+    expect(plan.frameAt(4000)!.segments, {last});
+    expect(plan.frameAt(4500), isNull);
+  });
+
+  test('starting at a later bar retains preceding tempo and dynamics', () {
+    final editor = ScoreEditor(fixture);
+    editor.setMeasureTempo(1, 60);
+    editor.setDynamic(0, DynamicMark.pp);
+    final plan = PlaybackPlan(editor, 120, startMeasure: 1);
+    expect(plan.durationMs, 5000);
+    expect(plan.notes.map((n) => (n.midi, n.startMs, n.endMs, n.volume)), [
+      (60, 4000, 5000, 42),
+    ]);
+    expect(plan.frameAt(0)!.measure, 1);
+    expect(plan.frameAt(0)!.segments, isEmpty);
+    expect(plan.frameAt(4000)!.measure, 2);
+    expect(plan.frameAt(4000)!.segments, hasLength(1));
+    expect(() => PlaybackPlan(editor, 120, startMeasure: 3), throwsRangeError);
+  });
+
   test('tied notes are scheduled once for their full duration', () {
     final editor = ScoreEditor(
       const Score(
@@ -93,6 +137,37 @@ void main() {
     );
     final plan = PlaybackPlan(editor, 120);
     expect(plan.notes.map((n) => (n.startMs, n.endMs)), [(1500, 2500)]);
+    final first = plan.frameAt(1500)!;
+    final second = plan.frameAt(2000)!;
+    expect(first.measure, 0);
+    expect(second.measure, 1);
+    expect(first.segments.single.eventId, second.segments.single.eventId);
+    expect(first.segments.single.startTick, 2880);
+    expect(second.segments.single.startTick, 0);
+  });
+
+  testWidgets('painter highlights every pitch of a playing chord', (
+    tester,
+  ) async {
+    final score = ScoreEditor(fixture).score;
+    final chord = score.measures[0].events.firstWhere(
+      (event) => event.pitches.length == 2,
+    );
+    final canvas = TestRecordingCanvas();
+    ScorePainter(
+      score: score,
+      selectedEvent: null,
+      selectedPitch: 0,
+      playingSegments: {
+        (measure: 0, startTick: chord.startTick, eventId: chord.eventId!),
+      },
+    ).paint(canvas, Size(ScorePainter.widthFor(score, 10), 320));
+    expect(
+      canvas.invocations.where(
+        (call) => call.invocation.memberName == #drawOval,
+      ),
+      hasLength(2),
+    );
   });
 
   test('rejects exceeding soundpool polyphony', () {
@@ -241,6 +316,179 @@ void main() {
     expect(find.byTooltip('Play score'), findsOneWidget);
     expect(calls.last.method, 'stopScore');
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('playback follows bars and restores editing state', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+    );
+    Future<void> addNote() async {
+      await tester.tapAt(
+        tester.getTopLeft(find.byType(ScoreViewport)) + const Offset(160, 115),
+      );
+      await tester.pump();
+    }
+
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    double scrollOffset() => tester
+        .widgetList<SingleChildScrollView>(
+          find.descendant(
+            of: find.byType(ScoreViewport),
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .singleWhere((view) => view.scrollDirection == Axis.horizontal)
+        .controller!
+        .offset;
+    await addNote();
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.pumpAndSettle();
+    await addNote();
+    await tester.tap(find.byTooltip('Previous bar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    final selectedId = viewport().selectedEvent!.eventId;
+    final cursor = viewport().cursorTick;
+    expect(viewport().selectedMeasure, 0);
+    final barOneOffset = scrollOffset();
+
+    Future<void> start() async {
+      await tester.tap(find.byTooltip('Play score'));
+      await tester.pump();
+      await tester.pump();
+      expect(viewport().selectedMeasure, 0);
+      expect(viewport().selectedEvent, isNull);
+      expect(viewport().cursorTick, isNull);
+      expect(viewport().playingSegments, hasLength(1));
+    }
+
+    void restored() {
+      expect(viewport().selectedMeasure, 0);
+      expect(viewport().selectedEvent!.eventId, selectedId);
+      expect(viewport().cursorTick, cursor);
+      expect(viewport().playingSegments, isEmpty);
+    }
+
+    await start();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(viewport().playingSegments, isEmpty);
+    await tester.pump(const Duration(milliseconds: 1400));
+    expect(viewport().selectedMeasure, 1);
+    expect(viewport().playingSegments, hasLength(1));
+    expect(scrollOffset(), greaterThan(barOneOffset));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byTooltip('Play score'), findsOneWidget);
+    restored();
+
+    await start();
+    await tester.tap(find.byTooltip('Stop playback'));
+    await tester.pump();
+    restored();
+
+    await start();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    restored();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await start();
+    await messenger.handlePlatformMessage(
+      channel.name,
+      channel.codec.encodeMethodCall(
+        const MethodCall('playbackError', 'Unable to play a score note.'),
+      ),
+      null,
+    );
+    await tester.pump();
+    expect(errors, ['Unable to play a score note.']);
+    restored();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('play starts at selected bar and go to start resets it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+    );
+    Future<void> addNote(double y) async {
+      await tester.tapAt(
+        tester.getTopLeft(find.byType(ScoreViewport)) + Offset(160, y),
+      );
+      await tester.pump();
+    }
+
+    await addNote(115);
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.pumpAndSettle();
+    await addNote(105);
+    await tester.tap(find.byTooltip('Play score'));
+    await tester.pump();
+    await tester.pump();
+    final payload = calls.lastWhere((call) => call.method == 'playScore');
+    final notes = (payload.arguments as Map)['notes'] as List;
+    expect(notes, hasLength(1));
+    expect((notes.single as Map)['startMs'], 0);
+    expect(
+      tester.widget<ScoreViewport>(find.byType(ScoreViewport)).selectedMeasure,
+      1,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is IconButton && widget.tooltip == 'Go to start',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byTooltip('Stop playback'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Go to start'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ScoreViewport>(find.byType(ScoreViewport)).selectedMeasure,
+      0,
+    );
+    await tester.tap(find.byTooltip('Play score'));
+    await tester.pump();
+    final fromStart = calls.lastWhere((call) => call.method == 'playScore');
+    expect(((fromStart.arguments as Map)['notes'] as List), hasLength(2));
+    await tester.tap(find.byTooltip('Stop playback'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Play score'));
+    await tester.pump();
+    expect(
+      find.text('No notes or rests at or after this bar.'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Play score'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 }

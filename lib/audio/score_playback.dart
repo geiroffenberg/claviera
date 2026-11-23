@@ -3,6 +3,19 @@ import '../models/score.dart';
 import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
+class PlaybackFrame {
+  const PlaybackFrame(this.startMs, this.measure, this.segments);
+  final int startMs;
+  final int measure;
+  final Set<PlaybackSegment> segments;
+}
+
+class _FrameChanges {
+  int? measure;
+  final adds = <PlaybackSegment>{};
+  final removes = <PlaybackSegment>{};
+}
+
 class PlaybackNote {
   const PlaybackNote(this.midi, this.startMs, this.endMs, {this.volume = 127});
   final int midi;
@@ -19,7 +32,7 @@ class PlaybackNote {
 }
 
 class PlaybackPlan {
-  PlaybackPlan(ScoreEditor editor, int bpm) {
+  PlaybackPlan(ScoreEditor editor, int bpm, {int startMeasure = 0}) {
     if (bpm < 30 || bpm > 240) {
       throw ArgumentError.value(bpm, 'bpm', 'Must be between 30 and 240.');
     }
@@ -40,14 +53,45 @@ class PlaybackPlan {
           (tick - previous) * 60000 / (currentBpm * ticksPerQuarter);
     }
 
-    final timeline = ScoreTimeline(editor);
+    final timeline = ScoreTimeline(editor, startMeasure: startMeasure);
     final dynamics = DynamicsTimeline(editor);
+    final score = editor.score;
+    final changesByTime = <int, _FrameChanges>{};
+    _FrameChanges at(int ms) =>
+        changesByTime.putIfAbsent(ms, _FrameChanges.new);
 
     var elapsed = 0.0;
     for (final span in timeline.spans) {
       final base = millis(span.$1);
-      for (final event in timeline.events) {
-        if (event.start < span.$1 || event.end > span.$2) continue;
+      final playableEvents = timeline.events
+          .where((event) => event.start >= span.$1 && event.end <= span.$2)
+          .toList();
+      final playableIds = {for (final event in playableEvents) event.id};
+      int outputTime(int tick) => (elapsed + millis(tick) - base).round();
+      var measure = editor.measureAtTick(span.$1);
+      while (measure < score.measures.length) {
+        final barStart = editor.measureStart(measure);
+        if (barStart >= span.$2) break;
+        final barEnd = editor.measureStart(measure + 1);
+        final start = barStart < span.$1 ? span.$1 : barStart;
+        at(outputTime(start)).measure = measure;
+        for (final event in score.measures[measure].events) {
+          if (event.isRest || !playableIds.contains(event.eventId)) continue;
+          final eventStart = barStart + event.startTick;
+          final eventEnd = eventStart + event.durationTicks;
+          if (eventStart < span.$1 || eventEnd > span.$2) continue;
+          final segment = (
+            measure: measure,
+            startTick: event.startTick,
+            eventId: event.eventId!,
+          );
+          at(outputTime(eventStart)).adds.add(segment);
+          at(outputTime(eventEnd)).removes.add(segment);
+        }
+        if (barEnd >= span.$2) break;
+        measure++;
+      }
+      for (final event in playableEvents) {
         final start = (elapsed + millis(event.start) - base).round();
         final end = (elapsed + millis(event.end) - base).round();
         for (final pitch in event.pitches) {
@@ -71,6 +115,20 @@ class PlaybackPlan {
       elapsed += millis(span.$2) - base;
     }
     durationMs = elapsed.round();
+    final playingSegments = <PlaybackSegment>{};
+    var currentMeasure = 0;
+    final times = changesByTime.keys.toList()..sort();
+    for (final time in times) {
+      final change = changesByTime[time]!;
+      currentMeasure = change.measure ?? currentMeasure;
+      playingSegments.removeAll(change.removes);
+      playingSegments.addAll(change.adds);
+      if (time < durationMs) {
+        _frames.add(
+          PlaybackFrame(time, currentMeasure, Set.unmodifiable(playingSegments)),
+        );
+      }
+    }
     final edges =
         <(int, int)>[
           for (final note in notes) ...[(note.startMs, 1), (note.endMs, -1)],
@@ -89,5 +147,21 @@ class PlaybackPlan {
   }
 
   final List<PlaybackNote> notes = [];
+  final List<PlaybackFrame> _frames = [];
   int durationMs = 0;
+
+  PlaybackFrame? frameAt(int elapsedMs) {
+    if (elapsedMs < 0 || elapsedMs >= durationMs || _frames.isEmpty) return null;
+    var low = 0;
+    var high = _frames.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_frames[middle].startMs <= elapsedMs) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low == 0 ? null : _frames[low - 1];
+  }
 }

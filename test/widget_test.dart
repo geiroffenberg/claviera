@@ -175,6 +175,43 @@ void main() {
     expect(tester.getTopLeft(canvas).dx, lessThan(origin.dx));
   });
 
+  testWidgets('edit taps select a bar and select a note with its bar', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    Offset origin() => tester.getTopLeft(canvas);
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    await tester.tapAt(origin() + const Offset(160, 115));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(origin() + const Offset(160, 115));
+    await tester.pump();
+    final barTwoNote = viewport().selectedEvent!.eventId;
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    await tester.tapAt(origin() + const Offset(250, 150));
+    await tester.pump();
+    expect(viewport().selectedMeasure, 0);
+    expect(viewport().selectedEvent, isNull);
+    await tester.tapAt(origin() + const Offset(440, 115));
+    await tester.pump();
+    expect(viewport().selectedMeasure, 1);
+    expect(viewport().selectedEvent!.eventId, barTwoNote);
+    expect(
+      viewport().score.measures[0].events.where((e) => !e.isRest),
+      hasLength(1),
+    );
+    expect(
+      viewport().score.measures[1].events.where((e) => !e.isRest),
+      hasLength(1),
+    );
+  });
+
   testWidgets(
     'a newly entered rest advances time; an explicitly selected rest can be filled',
     (tester) async {

@@ -33,6 +33,7 @@ class ScorePainter extends CustomPainter {
     required this.selectedPitch,
     this.selectedMeasure,
     this.cursorTick,
+    this.playingSegments = const {},
     this.previewPitch,
     this.previewStaff,
     this.previewDuration = 960,
@@ -46,6 +47,7 @@ class ScorePainter extends CustomPainter {
   final int selectedPitch;
   final int? selectedMeasure;
   final int? cursorTick;
+  final Set<PlaybackSegment> playingSegments;
   final Pitch? previewPitch;
   final Staff? previewStaff;
   final int previewDuration;
@@ -432,7 +434,13 @@ class ScorePainter extends CustomPainter {
       }
       for (final event in score.measures[m].events) {
         final x = eventXFor(score, m, event.startTick, _s);
-        _drawEvent(canvas, event, x, ink, beamY: beamed[event]);
+        final playing = event.eventId != null &&
+            playingSegments.contains((
+              measure: m,
+              startTick: event.startTick,
+              eventId: event.eventId!,
+            ));
+        _drawEvent(canvas, event, x, ink, beamY: beamed[event], playing: playing);
         if (event.tieToNext) {
           final end = event.startTick + event.durationTicks;
           final nextX = end == time.ticks
@@ -590,6 +598,7 @@ class ScorePainter extends CustomPainter {
     double x,
     Paint ink, {
     bool preview = false,
+    bool playing = false,
     double? beamY,
   }) {
     final top = event.staff == Staff.treble ? _trebleTop : _bassTop;
@@ -597,6 +606,8 @@ class ScorePainter extends CustomPainter {
         event.eventId != null && event.eventId == selectedEvent?.eventId;
     final color = preview
         ? const Color(0x991a8171)
+        : playing
+        ? const Color(0xff2856ad)
         : selected
         ? const Color(0xff1a8171)
         : const Color(0xff252c2a);
@@ -646,14 +657,16 @@ class ScorePainter extends CustomPainter {
           ink,
         );
       }
-      if (selected && i == selectedPitch) {
+      if (playing || (selected && i == selectedPitch)) {
         canvas.drawOval(
           Rect.fromCenter(
             center: Offset(headX + .6 * _s, y),
             width: 2.2 * _s,
             height: 1.6 * _s,
           ),
-          Paint()..color = const Color(0x331a8171),
+          Paint()..color = playing
+              ? const Color(0x443f73d7)
+              : const Color(0x331a8171),
         );
       }
       _glyph(canvas, head, headX, y, color: color);
@@ -709,6 +722,7 @@ class ScorePainter extends CustomPainter {
       selectedPitch != oldDelegate.selectedPitch ||
       selectedMeasure != oldDelegate.selectedMeasure ||
       cursorTick != oldDelegate.cursorTick ||
+      playingSegments != oldDelegate.playingSegments ||
       previewPitch != oldDelegate.previewPitch ||
       previewStaff != oldDelegate.previewStaff ||
       previewDuration != oldDelegate.previewDuration ||
