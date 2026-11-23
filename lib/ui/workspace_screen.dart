@@ -889,7 +889,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) {
-          final marks = editor.eventById(id)!.articulations;
+          final event = editor.eventById(id)!;
+          final marks = event.articulations;
           final portato =
               marks.contains(Articulation.staccato) &&
               marks.contains(Articulation.tenuto);
@@ -920,12 +921,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           }
 
           final options = [
-            (Articulation.staccato, 'Staccato', '\uE4A2'),
-            (Articulation.staccatissimo, 'Staccatissimo', '\uE4A6'),
-            (Articulation.tenuto, 'Tenuto', '\uE4A4'),
-            (null, 'Portato', '\uE4B2'),
-            (Articulation.accent, 'Accent', '\uE4A0'),
-            (Articulation.marcato, 'Marcato', '\uE4AC'),
+            if (!event.isRest) ...[
+              (Articulation.staccato, 'Staccato', '\uE4A2'),
+              (Articulation.staccatissimo, 'Staccatissimo', '\uE4A6'),
+              (Articulation.tenuto, 'Tenuto', '\uE4A4'),
+              (null, 'Portato', '\uE4B2'),
+              (Articulation.accent, 'Accent', '\uE4A0'),
+              (Articulation.marcato, 'Marcato', '\uE4AC'),
+            ],
+            (Articulation.fermata, 'Fermata', '\uE4C0'),
           ];
           return AlertDialog(
             title: const Text('Articulations'),
@@ -961,8 +965,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            selected:
-                                mark == null ? portato : marks.contains(mark),
+                            selected: mark == null
+                                ? portato
+                                : marks.contains(mark),
                             showCheckmark: false,
                             visualDensity: VisualDensity.compact,
                             materialTapTargetSize:
@@ -970,6 +975,45 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             onSelected: (_) => toggle(mark),
                           ),
                         ),
+                      if (!event.isRest)
+                        for (final direction in ArpeggioDirection.values)
+                          SizedBox(
+                            width: (constraints.maxWidth - 8) / 2,
+                            child: FilterChip(
+                              avatar: Icon(
+                                direction == ArpeggioDirection.up
+                                    ? Icons.arrow_upward
+                                    : Icons.arrow_downward,
+                                size: 16,
+                              ),
+                              label: Text.rich(
+                                TextSpan(text: 'Arpeggio ${direction.name}'),
+                                style: const TextStyle(fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              selected:
+                                  editor.arpeggios[event.start] == direction,
+                              showCheckmark: false,
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onSelected: editor.pitchCountAt(event.start) < 2
+                                  ? null
+                                  : (_) {
+                                      _perform(
+                                        () => editor.setArpeggio(
+                                          event.start,
+                                          editor.arpeggios[event.start] ==
+                                                  direction
+                                              ? null
+                                              : direction,
+                                        ),
+                                      );
+                                      update(() {});
+                                    },
+                            ),
+                          ),
                     ],
                   ),
                 ),
@@ -1560,11 +1604,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           _textButton(
                             '\uE4B0',
                             'Articulations',
-                            event == null || event.isRest
+                            event == null
                                 ? null
                                 : () => _articulationPalette(event.id),
                             selected:
-                                event != null && event.articulations.isNotEmpty,
+                                event != null &&
+                                (event.articulations.isNotEmpty ||
+                                    editor.arpeggios.containsKey(event.start)),
                             music: true,
                           ),
                         ]),
@@ -1693,6 +1739,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                   cursorTick: playing ? null : cursor,
                                   playingSegments:
                                       playbackFrame?.segments ?? const {},
+                                  playingPitches:
+                                      playbackFrame?.playingPitches ?? const {},
                                   previewPitch: playing ? null : preview,
                                   previewStaff: previewStaff,
                                   previewDuration: duration,
@@ -1917,10 +1965,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     return _textButton(
       (rest ? rests : notes)[value.index],
       '${value.name} ${rest ? 'rest' : 'note'}',
-      () => _changeDuration(
-        value,
-        dots.clamp(0, value.maxDots),
-      ),
+      () => _changeDuration(value, dots.clamp(0, value.maxDots)),
       selected: value == noteValue,
       music: true,
     );

@@ -34,6 +34,7 @@ class ScorePainter extends CustomPainter {
     this.selectedMeasure,
     this.cursorTick,
     this.playingSegments = const {},
+    this.playingPitches = const {},
     this.previewPitch,
     this.previewStaff,
     this.previewDuration = 960,
@@ -48,6 +49,7 @@ class ScorePainter extends CustomPainter {
   final int? selectedMeasure;
   final int? cursorTick;
   final Set<PlaybackSegment> playingSegments;
+  final Map<PlaybackSegment, Set<int>> playingPitches;
   final Pitch? previewPitch;
   final Staff? previewStaff;
   final int previewDuration;
@@ -451,15 +453,52 @@ class ScorePainter extends CustomPainter {
           beamed[event] = y;
         }
       }
+      for (final entry in score.measures[m].arpeggios.entries) {
+        final events = score.measures[m].events
+            .where(
+              (event) =>
+                  event.startTick == entry.key &&
+                  !event.tieFromPrevious &&
+                  !event.isRest,
+            )
+            .toList();
+        final pitches = [
+          for (final event in events)
+            for (final pitch in event.pitches) _pitchY(pitch, event.staff),
+        ];
+        if (pitches.length < 2) continue;
+        var left = 0.0;
+        for (final event in events) {
+          final up = stemPointsUp(event.voice);
+          final displaced = secondOffsets(event.pitches, stemUp: up);
+          for (var i = 0; i < event.pitches.length; i++) {
+            final head = displaced[i] ? (up ? 1.15 : -1.15) : 0.0;
+            final accidental = event.pitches[i].accidental == Accidental.none
+                ? 0.0
+                : 1.5;
+            left = math.min(left, head - accidental);
+          }
+        }
+        final x = eventXFor(score, m, entry.key, _s) + (left - .9) * _s;
+        final top = pitches.reduce(math.min);
+        final bottom = math.max(pitches.reduce(math.max), top + 1.5 * _s);
+        _drawArpeggio(canvas, x, top, bottom, entry.value);
+      }
       for (final event in score.measures[m].events) {
         final x = eventXFor(score, m, event.startTick, _s);
-        final playing = event.eventId != null &&
-            playingSegments.contains((
-              measure: m,
-              startTick: event.startTick,
-              eventId: event.eventId!,
-            ));
-        _drawEvent(canvas, event, x, ink, beamY: beamed[event], playing: playing);
+        final segment = event.eventId == null
+            ? null
+            : (measure: m, startTick: event.startTick, eventId: event.eventId!);
+        final playing = segment != null && playingSegments.contains(segment);
+        _drawEvent(
+          canvas,
+          event,
+          x,
+          ink,
+          beamY: beamed[event],
+          playing: playing,
+          playingPitchIndices: segment == null ? null : playingPitches[segment],
+        );
         if (event.tieToNext) {
           final end = event.startTick + event.durationTicks;
           final nextX = end == time.ticks
@@ -573,6 +612,36 @@ class ScorePainter extends CustomPainter {
     }
   }
 
+  void _drawArpeggio(
+    Canvas canvas,
+    double x,
+    double top,
+    double bottom,
+    ArpeggioDirection direction,
+  ) {
+    final paint = Paint()
+      ..color = const Color(0xff252c2a)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()..moveTo(x, top);
+    final steps = math.max(1, ((bottom - top) / (.5 * _s)).ceil());
+    final step = (bottom - top) / steps;
+    for (var i = 0; i < steps; i++) {
+      path.quadraticBezierTo(
+        x + (i.isEven ? .3 : -.3) * _s,
+        top + (i + .5) * step,
+        x,
+        top + (i + 1) * step,
+      );
+    }
+    final tip = direction == ArpeggioDirection.up ? top : bottom;
+    final sign = direction == ArpeggioDirection.up ? 1 : -1;
+    path.moveTo(x - .35 * _s, tip + sign * .55 * _s);
+    path.lineTo(x, tip);
+    path.lineTo(x + .35 * _s, tip + sign * .55 * _s);
+    canvas.drawPath(path, paint);
+  }
+
   void _drawBeams(
     Canvas canvas,
     int measure,
@@ -618,6 +687,7 @@ class ScorePainter extends CustomPainter {
     Paint ink, {
     bool preview = false,
     bool playing = false,
+    Set<int>? playingPitchIndices,
     double? beamY,
   }) {
     final top = event.staff == Staff.treble ? _trebleTop : _bassTop;
@@ -653,6 +723,9 @@ class ScorePainter extends CustomPainter {
           color: color,
         );
       }
+      if (event.articulations.contains(Articulation.fermata)) {
+        _glyph(canvas, '\uE4C0', x, top - 1.5 * _s, color: color);
+      }
       return;
     }
     final up = stemPointsUp(event.voice);
@@ -665,6 +738,11 @@ class ScorePainter extends CustomPainter {
         : '\uE0A4';
     for (var i = 0; i < event.pitches.length; i++) {
       final pitch = event.pitches[i];
+      final pitchPlaying =
+          playing && (playingPitchIndices?.contains(i) ?? true);
+      final pitchColor = playing && !pitchPlaying
+          ? const Color(0xff252c2a)
+          : color;
       final headX = x + (offsets[i] ? (up ? 1.15 : -1.15) * _s : 0);
       final y = ys[i];
       // Draw ledger lines on staff-line positions, including middle C.
@@ -682,19 +760,20 @@ class ScorePainter extends CustomPainter {
           ink,
         );
       }
-      if (playing || (selected && i == selectedPitch)) {
+      if (pitchPlaying || (selected && i == selectedPitch)) {
         canvas.drawOval(
           Rect.fromCenter(
             center: Offset(headX + .6 * _s, y),
             width: 2.2 * _s,
             height: 1.6 * _s,
           ),
-          Paint()..color = playing
-              ? const Color(0x443f73d7)
-              : const Color(0x331a8171),
+          Paint()
+            ..color = pitchPlaying
+                ? const Color(0x443f73d7)
+                : const Color(0x331a8171),
         );
       }
-      _glyph(canvas, head, headX, y, color: color);
+      _glyph(canvas, head, headX, y, color: pitchColor);
       final accidental = switch (pitch.accidental) {
         Accidental.none => null,
         Accidental.sharp => '\uE262',
@@ -702,7 +781,7 @@ class ScorePainter extends CustomPainter {
         Accidental.natural => '\uE261',
       };
       if (accidental != null) {
-        _glyph(canvas, accidental, headX - 1.5 * _s, y, color: color);
+        _glyph(canvas, accidental, headX - 1.5 * _s, y, color: pitchColor);
       }
       for (var dot = 0; dot < dots; dot++) {
         _glyph(
@@ -710,7 +789,7 @@ class ScorePainter extends CustomPainter {
           '\uE1E7',
           headX + (1.6 + dot * .6) * _s,
           y - .5 * _s,
-          color: color,
+          color: pitchColor,
         );
       }
     }
@@ -724,6 +803,15 @@ class ScorePainter extends CustomPainter {
         glyphs[i],
         x + .2 * _s,
         markY + (up ? 1 : -1) * i * _s,
+        color: color,
+      );
+    }
+    if (event.articulations.contains(Articulation.fermata)) {
+      _glyph(
+        canvas,
+        up ? '\uE4C1' : '\uE4C0',
+        x,
+        markY + (up ? 1 : -1) * glyphs.length * _s,
         color: color,
       );
     }
@@ -767,6 +855,7 @@ class ScorePainter extends CustomPainter {
       selectedMeasure != oldDelegate.selectedMeasure ||
       cursorTick != oldDelegate.cursorTick ||
       playingSegments != oldDelegate.playingSegments ||
+      playingPitches != oldDelegate.playingPitches ||
       previewPitch != oldDelegate.previewPitch ||
       previewStaff != oldDelegate.previewStaff ||
       previewDuration != oldDelegate.previewDuration ||

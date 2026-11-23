@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'arpeggio_playback.dart';
 import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
@@ -19,6 +20,7 @@ class MidiExport {
       throw ArgumentError.value(initialTempo, 'initialTempo');
     }
     final timeline = ScoreTimeline(editor);
+    final offsets = arpeggioOffsets(timeline.events, editor.arpeggios);
     final dynamics = DynamicsTimeline(editor);
     final events = <_MidiEvent>[];
     final extraChannels = [
@@ -71,6 +73,9 @@ class MidiExport {
 
     if (timeline.spans.isEmpty) metadata(0, 0);
     for (final span in timeline.spans) {
+      final holds = FermataHolds(timeline.events, span);
+      int outputTick(int tick) =>
+          offset + tick - span.$1 + holds.extraTicksAt(tick);
       final first = editor.measureAtTick(span.$1);
       metadata(offset, first);
       for (var measure = first + 1; measure < editor.measureCount; measure++) {
@@ -79,25 +84,26 @@ class MidiExport {
         if (editor.tempoChanges.containsKey(measure) ||
             editor.timeChanges.containsKey(measure) ||
             editor.keyChanges.containsKey(measure)) {
-          metadata(offset + tick - span.$1, measure);
+          metadata(outputTick(tick), measure);
         }
       }
       for (final event in timeline.events) {
         if (event.start < span.$1 || event.end > span.$2) continue;
-        for (final pitch in event.pitches) {
+        for (var i = 0; i < event.pitches.length; i++) {
+          final pitch = event.pitches[i];
           if (pitch.midiNote < 0 || pitch.midiNote > 127) {
             throw StateError('Invalid MIDI pitch: ${pitch.midiNote}.');
           }
           notes.add((
-            offset + event.start - span.$1,
-            offset + articulatedEnd(event) - span.$1,
+            outputTick(event.start + (offsets[(event.id, i)] ?? 0)),
+            outputTick(articulatedEnd(event)),
             pitch.midiNote,
             event.voice,
             articulatedVelocity(event, dynamics.velocityAt(event.start)),
           ));
         }
       }
-      offset += span.$2 - span.$1;
+      offset += span.$2 - span.$1 + holds.extraTicksAt(span.$2);
     }
     notes.sort((a, b) {
       final start = a.$1.compareTo(b.$1);

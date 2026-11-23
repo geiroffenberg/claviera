@@ -12,6 +12,7 @@ class ScoreViewport extends StatefulWidget {
     this.selectedMeasure,
     this.cursorTick,
     this.playingSegments = const {},
+    this.playingPitches = const {},
     this.previewPitch,
     this.previewStaff,
     this.previewDuration = 960,
@@ -28,6 +29,7 @@ class ScoreViewport extends StatefulWidget {
   final int? selectedMeasure;
   final int? cursorTick;
   final Set<PlaybackSegment> playingSegments;
+  final Map<PlaybackSegment, Set<int>> playingPitches;
   final Pitch? previewPitch;
   final Staff? previewStaff;
   final int previewDuration;
@@ -160,6 +162,7 @@ class _ScoreViewportState extends State<ScoreViewport> {
                       selectedMeasure: widget.selectedMeasure,
                       cursorTick: widget.cursorTick,
                       playingSegments: widget.playingSegments,
+                      playingPitches: widget.playingPitches,
                       previewPitch: widget.previewPitch,
                       previewStaff: widget.previewStaff,
                       previewDuration: widget.previewDuration,

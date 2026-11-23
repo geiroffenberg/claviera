@@ -54,6 +54,72 @@ List<MidiMessage> parseMidi(Uint8List bytes) {
 }
 
 void main() {
+  test('MIDI arpeggiates simultaneous pitches across voices in order', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.append(
+      voice: Voice.v2,
+      staff: Staff.bass,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 21, midiNote: 48),
+    );
+    editor.setArpeggio(0, ArpeggioDirection.down);
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    expect(
+      messages
+          .where((m) => m.status & 0xf0 == 0x90)
+          .map((m) => (m.tick, m.data[0])),
+      [(0, 64), (60, 60), (120, 48)],
+    );
+    expect(messages.where((m) => m.status & 0xf0 == 0x80).map((m) => m.tick), [
+      960,
+      960,
+      960,
+    ]);
+  });
+
+  test('MIDI repeats fermata holds and moves later tempo changes', () {
+    final editor = ScoreEditor(blankScore);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 3840,
+      pitch: c,
+    );
+    editor.setArticulations(id, {Articulation.fermata});
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.setMeasureRepeats(0, start: false, end: true);
+    editor.setMeasureTempo(1, 60);
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    expect(messages.where((m) => m.status & 0xf0 == 0x90).map((m) => m.tick), [
+      0,
+      5760,
+      11520,
+    ]);
+    expect(messages.where((m) => m.status & 0xf0 == 0x80).map((m) => m.tick), [
+      5760,
+      11520,
+      12480,
+    ]);
+    expect(messages.where((m) => m.status == 0xff51).map((m) => m.tick), [
+      0,
+      5760,
+      11520,
+    ]);
+  });
+
   test('MIDI retains double-dotted note durations', () {
     final editor = ScoreEditor(blankScore);
     editor.append(
@@ -63,27 +129,42 @@ void main() {
       pitch: const Pitch(diatonicStep: 28, midiNote: 60),
     );
     final messages = parseMidi(MidiExport.encode(editor, 120));
-    expect(messages.where((message) => message.status & 0xf0 == 0x80).single.tick, 840);
+    expect(
+      messages.where((message) => message.status & 0xf0 == 0x80).single.tick,
+      840,
+    );
   });
 
-  test('MIDI applies articulations to every pitch without shifting later notes', () {
-    final editor = ScoreEditor(blankScore);
-    const c = Pitch(diatonicStep: 28, midiNote: 60);
-    final id = editor.append(
-      voice: Voice.v1,
-      staff: Staff.treble,
-      duration: 960,
-      pitch: c,
-    );
-    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
-    editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
-    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 960, pitch: c);
-    final messages = parseMidi(MidiExport.encode(editor, 120));
-    final ons = messages.where((m) => m.status & 0xf0 == 0x90).toList();
-    final offs = messages.where((m) => m.status & 0xf0 == 0x80).toList();
-    expect(ons.map((m) => (m.tick, m.data[1])), [(0, 96), (0, 96), (960, 80)]);
-    expect(offs.map((m) => m.tick), [480, 480, 1920]);
-  });
+  test(
+    'MIDI applies articulations to every pitch without shifting later notes',
+    () {
+      final editor = ScoreEditor(blankScore);
+      const c = Pitch(diatonicStep: 28, midiNote: 60);
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: c,
+      );
+      editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+      editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
+      editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: c,
+      );
+      final messages = parseMidi(MidiExport.encode(editor, 120));
+      final ons = messages.where((m) => m.status & 0xf0 == 0x90).toList();
+      final offs = messages.where((m) => m.status & 0xf0 == 0x80).toList();
+      expect(ons.map((m) => (m.tick, m.data[1])), [
+        (0, 96),
+        (0, 96),
+        (960, 80),
+      ]);
+      expect(offs.map((m) => m.tick), [480, 480, 1920]);
+    },
+  );
 
   test('encodes voices, chords, gaps, ties and overlapping same pitches', () {
     final editor = ScoreEditor(
@@ -238,23 +319,29 @@ void main() {
     final before = ProjectCodec.encode(project);
     final messages = parseMidi(MidiExport.encode(editor, 120));
     expect(messages.last.tick, 0);
-    expect(messages.where((e) => e.status == 0xff51).single.data,
-        [0x07, 0xa1, 0x20]);
+    expect(messages.where((e) => e.status == 0xff51).single.data, [
+      0x07,
+      0xa1,
+      0x20,
+    ]);
     expect(ProjectCodec.encode(project), before);
   });
 
   test('end repeat without a start returns to the beginning', () {
     final editor = ScoreEditor(blankScore);
     editor.append(
-      voice: Voice.v1, staff: Staff.treble, duration: 960,
-      pitch: const Pitch(diatonicStep: 28, midiNote: 60), measure: 0,
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+      measure: 0,
     );
     editor.setMeasureRepeats(1, start: false, end: true);
     final messages = parseMidi(MidiExport.encode(editor, 120));
-    expect(
-      messages.where((m) => m.status & 0xf0 == 0x90).map((m) => m.tick),
-      [0, 7680],
-    );
+    expect(messages.where((m) => m.status & 0xf0 == 0x90).map((m) => m.tick), [
+      0,
+      7680,
+    ]);
     expect(messages.last.tick, 15360);
   });
 

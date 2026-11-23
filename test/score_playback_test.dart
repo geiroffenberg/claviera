@@ -63,6 +63,222 @@ const fixture = Score(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'arpeggio staggers pitches across voices and highlights each attack',
+    () {
+      final editor = ScoreEditor(
+        const Score(
+          title: '',
+          beatsPerMeasure: 4,
+          beatUnit: 4,
+          measures: [Measure()],
+        ),
+      );
+      final chord = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: c,
+      );
+      editor.addPitch(chord, const Pitch(diatonicStep: 30, midiNote: 64));
+      final bass = editor.append(
+        voice: Voice.v2,
+        staff: Staff.bass,
+        duration: 960,
+        pitch: const Pitch(diatonicStep: 21, midiNote: 48),
+      );
+      editor.setArpeggio(0, ArpeggioDirection.up);
+      var plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.map((note) => (note.midi, note.startMs, note.endMs)), [
+        (48, 0, 500),
+        (60, 31, 500),
+        (64, 63, 500),
+      ]);
+      final chordSegment = (measure: 0, startTick: 0, eventId: chord);
+      final bassSegment = (measure: 0, startTick: 0, eventId: bass);
+      expect(plan.frameAt(0)!.playingPitches, {
+        bassSegment: {0},
+      });
+      expect(plan.frameAt(31)!.playingPitches[chordSegment], {0});
+      expect(plan.frameAt(63)!.playingPitches[chordSegment], {0, 1});
+      editor.setArpeggio(0, ArpeggioDirection.down);
+      plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.map((note) => (note.midi, note.startMs)), [
+        (64, 0),
+        (60, 31),
+        (48, 63),
+      ]);
+      editor.setArticulations(chord, {Articulation.fermata});
+      editor.setMeasureRepeats(0, start: false, end: true);
+      plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.map((note) => (note.midi, note.startMs, note.endMs)), [
+        (64, 0, 750),
+        (60, 31, 750),
+        (48, 63, 750),
+        (64, 2250, 3000),
+        (60, 2281, 3000),
+        (48, 2313, 3000),
+      ]);
+    },
+  );
+
+  test('arpeggio attacks fit inside short articulated notes', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
+    );
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 60,
+      pitch: c,
+    );
+    editor.addPitch(id, sharp);
+    editor.setArticulations(id, {Articulation.staccatissimo});
+    editor.setArpeggio(0, ArpeggioDirection.up);
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.last.startMs, lessThan(plan.notes.last.endMs));
+    expect(plan.durationMs, 31);
+  });
+
+  test('a fermata on a rest holds a simultaneous note and delays the next', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                articulations: {Articulation.fermata},
+              ),
+              NotationEvent(
+                startTick: 960,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                pitches: [sharp],
+              ),
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 1920,
+                voice: Voice.v2,
+                staff: Staff.bass,
+                pitches: [c],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.map((note) => (note.midi, note.startMs, note.endMs)), [
+      (60, 0, 1250),
+      (61, 750, 1250),
+    ]);
+  });
+
+  test('fermatas pause all voices once, including a marked rest', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                pitches: [c],
+                articulations: {Articulation.fermata},
+              ),
+              NotationEvent(
+                startTick: 960,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                pitches: [sharp],
+              ),
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 1920,
+                voice: Voice.v2,
+                staff: Staff.bass,
+                pitches: [c],
+              ),
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 960,
+                voice: Voice.v3,
+                staff: Staff.treble,
+                articulations: {Articulation.fermata},
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final plan = PlaybackPlan(editor, 120);
+    expect(plan.notes.map((note) => (note.startMs, note.endMs)), [
+      (0, 750),
+      (0, 1250),
+      (750, 1250),
+    ]);
+    expect(plan.frameAt(749)!.segments, hasLength(2));
+    expect(plan.frameAt(750)!.segments, hasLength(2));
+    expect(plan.durationMs, 1250);
+  });
+
+  test(
+    'fermatas repeat and keep bar-boundary tempo changes after the hold',
+    () {
+      final editor = ScoreEditor(
+        const Score(
+          title: '',
+          beatsPerMeasure: 4,
+          beatUnit: 4,
+          measures: [Measure(), Measure()],
+        ),
+      );
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 3840,
+        pitch: c,
+      );
+      editor.setArticulations(id, {Articulation.fermata});
+      editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: sharp,
+      );
+      editor.setMeasureRepeats(0, start: false, end: true);
+      editor.setMeasureTempo(1, 60);
+      final plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.map((note) => (note.startMs, note.endMs)), [
+        (0, 3000),
+        (3000, 6000),
+        (6000, 7000),
+      ]);
+      expect(plan.frameAt(5999)!.measure, 0);
+      expect(plan.frameAt(6000)!.measure, 1);
+      expect(PlaybackPlan(editor, 120, startMeasure: 1).durationMs, 1000);
+    },
+  );
+
   test('plans polyphony, silence and absolute timing at different tempos', () {
     final editor = ScoreEditor(fixture);
     final plan = PlaybackPlan(editor, 120);
@@ -79,7 +295,12 @@ void main() {
 
   test('double-dotted notes play for their exact duration', () {
     final editor = ScoreEditor(
-      const Score(title: '', beatsPerMeasure: 4, beatUnit: 4, measures: [Measure()]),
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
     );
     editor.append(
       voice: Voice.v1,
@@ -93,36 +314,45 @@ void main() {
     expect(plan.frameAt(875), isNull);
   });
 
-  test('articulations change sounding duration, highlights and accent volume', () {
-    final editor = ScoreEditor(fixture);
-    final chord = editor.eventsFor(Voice.v1).first.id;
-    for (final (marks, end) in [
-      ({Articulation.staccato}, 250),
-      ({Articulation.staccatissimo}, 125),
-      ({Articulation.tenuto}, 500),
-      ({Articulation.staccato, Articulation.tenuto}, 375),
-    ]) {
-      editor.setArticulations(chord, marks);
-      final plan = PlaybackPlan(editor, 120);
-      expect(plan.notes.take(2).map((n) => (n.endMs, n.volume)), [
-        (end, 127),
-        (end, 127),
-      ]);
-      expect(
-        plan.frameAt(end)!.segments.any((segment) => segment.eventId == chord),
-        isFalse,
-      );
-    }
-    editor.setArticulations(chord, {Articulation.staccato, Articulation.accent});
-    var plan = PlaybackPlan(editor, 120);
-    expect(plan.notes.take(2).map((n) => n.volume), [96, 96]);
-    expect(plan.notes.last.volume, 80);
-    editor.setDynamic(0, DynamicMark.pp);
-    plan = PlaybackPlan(editor, 120);
-    expect(plan.notes.first.volume, 58);
-    editor.setArticulations(chord, {Articulation.marcato});
-    expect(PlaybackPlan(editor, 120).notes.first.volume, 66);
-  });
+  test(
+    'articulations change sounding duration, highlights and accent volume',
+    () {
+      final editor = ScoreEditor(fixture);
+      final chord = editor.eventsFor(Voice.v1).first.id;
+      for (final (marks, end) in [
+        ({Articulation.staccato}, 250),
+        ({Articulation.staccatissimo}, 125),
+        ({Articulation.tenuto}, 500),
+        ({Articulation.staccato, Articulation.tenuto}, 375),
+      ]) {
+        editor.setArticulations(chord, marks);
+        final plan = PlaybackPlan(editor, 120);
+        expect(plan.notes.take(2).map((n) => (n.endMs, n.volume)), [
+          (end, 127),
+          (end, 127),
+        ]);
+        expect(
+          plan
+              .frameAt(end)!
+              .segments
+              .any((segment) => segment.eventId == chord),
+          isFalse,
+        );
+      }
+      editor.setArticulations(chord, {
+        Articulation.staccato,
+        Articulation.accent,
+      });
+      var plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.take(2).map((n) => n.volume), [96, 96]);
+      expect(plan.notes.last.volume, 80);
+      editor.setDynamic(0, DynamicMark.pp);
+      plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.first.volume, 58);
+      editor.setArticulations(chord, {Articulation.marcato});
+      expect(PlaybackPlan(editor, 120).notes.first.volume, 66);
+    },
+  );
 
   test('visual frames follow sounding voices and bar boundaries', () {
     final editor = ScoreEditor(fixture);
@@ -193,23 +423,31 @@ void main() {
     expect(second.segments.single.startTick, 0);
   });
 
-  test('shortened tied notes do not highlight silent continuation segments', () {
-    final editor = ScoreEditor(
-      const Score(title: '', beatsPerMeasure: 4, beatUnit: 4, measures: [Measure()]),
-    );
-    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
-    final id = editor.append(
-      voice: Voice.v1,
-      staff: Staff.treble,
-      duration: 1920,
-      pitch: c,
-    );
-    editor.setArticulations(id, {Articulation.staccato});
-    final plan = PlaybackPlan(editor, 120);
-    expect(plan.notes.single.endMs, 2000);
-    expect(plan.frameAt(1999)!.segments, hasLength(1));
-    expect(plan.frameAt(2000)!.segments, isEmpty);
-  });
+  test(
+    'shortened tied notes do not highlight silent continuation segments',
+    () {
+      final editor = ScoreEditor(
+        const Score(
+          title: '',
+          beatsPerMeasure: 4,
+          beatUnit: 4,
+          measures: [Measure()],
+        ),
+      );
+      editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 1920,
+        pitch: c,
+      );
+      editor.setArticulations(id, {Articulation.staccato});
+      final plan = PlaybackPlan(editor, 120);
+      expect(plan.notes.single.endMs, 2000);
+      expect(plan.frameAt(1999)!.segments, hasLength(1));
+      expect(plan.frameAt(2000)!.segments, isEmpty);
+    },
+  );
 
   testWidgets('painter highlights every pitch of a playing chord', (
     tester,

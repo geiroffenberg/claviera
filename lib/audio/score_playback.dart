@@ -1,20 +1,29 @@
+import 'dart:math' as math;
+
 import '../editor/score_editor.dart';
 import '../models/score.dart';
+import 'arpeggio_playback.dart';
 import 'articulation_playback.dart';
 import 'dynamics_timeline.dart';
 import 'score_timeline.dart';
 
 class PlaybackFrame {
-  const PlaybackFrame(this.startMs, this.measure, this.segments);
+  const PlaybackFrame(
+    this.startMs,
+    this.measure,
+    this.segments,
+    this.playingPitches,
+  );
   final int startMs;
   final int measure;
   final Set<PlaybackSegment> segments;
+  final Map<PlaybackSegment, Set<int>> playingPitches;
 }
 
 class _FrameChanges {
   int? measure;
-  final adds = <PlaybackSegment>{};
-  final removes = <PlaybackSegment>{};
+  final adds = <(PlaybackSegment, int)>{};
+  final removes = <(PlaybackSegment, int)>{};
 }
 
 class PlaybackNote {
@@ -55,6 +64,7 @@ class PlaybackPlan {
     }
 
     final timeline = ScoreTimeline(editor, startMeasure: startMeasure);
+    final offsets = arpeggioOffsets(timeline.events, editor.arpeggios);
     final dynamics = DynamicsTimeline(editor);
     final hasAccents = timeline.events.any(
       (event) =>
@@ -69,11 +79,27 @@ class PlaybackPlan {
     var elapsed = 0.0;
     for (final span in timeline.spans) {
       final base = millis(span.$1);
+      final holds = FermataHolds(timeline.events, span);
+      double heldMillis(int tick) {
+        var result = 0.0;
+        for (final hold in holds.holds) {
+          if (hold.key > tick) break;
+          var holdBpm = bpm;
+          for (final change in changes) {
+            if (editor.measureStart(change.key) >= hold.key) break;
+            holdBpm = change.value;
+          }
+          result += hold.value * 60000 / (holdBpm * ticksPerQuarter);
+        }
+        return result;
+      }
+
       final playableEvents = timeline.events
           .where((event) => event.start >= span.$1 && event.end <= span.$2)
           .toList();
       final playable = {for (final event in playableEvents) event.id: event};
-      int outputTime(int tick) => (elapsed + millis(tick) - base).round();
+      int outputTime(int tick) =>
+          (elapsed + millis(tick) - base + heldMillis(tick)).round();
       var measure = editor.measureAtTick(span.$1);
       while (measure < score.measures.length) {
         final barStart = editor.measureStart(measure);
@@ -97,16 +123,24 @@ class PlaybackPlan {
             startTick: event.startTick,
             eventId: event.eventId!,
           );
-          at(outputTime(eventStart)).adds.add(segment);
-          at(outputTime(eventEnd)).removes.add(segment);
+          for (var i = 0; i < logical.pitches.length; i++) {
+            final pitchStart = math.max(
+              eventStart,
+              logical.start + (offsets[(logical.id, i)] ?? 0),
+            );
+            if (pitchStart >= eventEnd) continue;
+            at(outputTime(pitchStart)).adds.add((segment, i));
+            at(outputTime(eventEnd)).removes.add((segment, i));
+          }
         }
         if (barEnd >= span.$2) break;
         measure++;
       }
       for (final event in playableEvents) {
-        final start = (elapsed + millis(event.start) - base).round();
-        final end = (elapsed + millis(articulatedEnd(event)) - base).round();
-        for (final pitch in event.pitches) {
+        final end = outputTime(articulatedEnd(event));
+        for (var i = 0; i < event.pitches.length; i++) {
+          final pitch = event.pitches[i];
+          final start = outputTime(event.start + (offsets[(event.id, i)] ?? 0));
           if (pitch.midiNote < 10 || pitch.midiNote > 127) {
             throw StateError(
               'MIDI note ${pitch.midiNote} is outside the sample playback range (10–127).',
@@ -127,20 +161,32 @@ class PlaybackPlan {
           );
         }
       }
-      elapsed += millis(span.$2) - base;
+      elapsed += millis(span.$2) - base + heldMillis(span.$2);
     }
     durationMs = elapsed.round();
-    final playingSegments = <PlaybackSegment>{};
+    final playing = <(PlaybackSegment, int)>{};
     var currentMeasure = 0;
     final times = changesByTime.keys.toList()..sort();
     for (final time in times) {
       final change = changesByTime[time]!;
       currentMeasure = change.measure ?? currentMeasure;
-      playingSegments.removeAll(change.removes);
-      playingSegments.addAll(change.adds);
+      playing.removeAll(change.removes);
+      playing.addAll(change.adds);
       if (time < durationMs) {
+        final pitches = <PlaybackSegment, Set<int>>{};
+        for (final (segment, pitch) in playing) {
+          pitches.putIfAbsent(segment, () => <int>{}).add(pitch);
+        }
         _frames.add(
-          PlaybackFrame(time, currentMeasure, Set.unmodifiable(playingSegments)),
+          PlaybackFrame(
+            time,
+            currentMeasure,
+            Set.unmodifiable(pitches.keys),
+            Map.unmodifiable({
+              for (final entry in pitches.entries)
+                entry.key: Set<int>.unmodifiable(entry.value),
+            }),
+          ),
         );
       }
     }
@@ -166,7 +212,9 @@ class PlaybackPlan {
   int durationMs = 0;
 
   PlaybackFrame? frameAt(int elapsedMs) {
-    if (elapsedMs < 0 || elapsedMs >= durationMs || _frames.isEmpty) return null;
+    if (elapsedMs < 0 || elapsedMs >= durationMs || _frames.isEmpty) {
+      return null;
+    }
     var low = 0;
     var high = _frames.length;
     while (low < high) {

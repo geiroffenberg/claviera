@@ -9,6 +9,35 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('arpeggios survive PDF system slicing', () {
+    final editor = ScoreEditor(
+      Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: List.generate(8, (_) => const Measure()),
+      ),
+    );
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+      measure: 4,
+    );
+    editor.addPitch(id, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.setArpeggio(editor.measureStart(4), ArpeggioDirection.up);
+    final systems = PrintLayout.systems(editor.score);
+    expect(
+      systems
+          .expand((system) => system.score.measures)
+          .where((measure) => measure.arpeggios.isNotEmpty)
+          .single
+          .arpeggios,
+      {0: ArpeggioDirection.up},
+    );
+  });
+
   testWidgets('prints an articulation once on a tied chord attack', (
     tester,
   ) async {

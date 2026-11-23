@@ -9,9 +9,10 @@ enum Staff { treble, bass }
 
 enum Accidental { none, sharp, flat, natural }
 
-enum Articulation { staccato, staccatissimo, tenuto, accent, marcato }
+enum Articulation { staccato, staccatissimo, tenuto, accent, marcato, fermata }
 
-bool validArticulations(Set<Articulation> marks) =>
+bool validArticulations(Set<Articulation> marks, {bool isRest = false}) =>
+    (!isRest || marks.every((mark) => mark == Articulation.fermata)) &&
     !(marks.contains(Articulation.staccatissimo) &&
         (marks.contains(Articulation.staccato) ||
             marks.contains(Articulation.tenuto))) &&
@@ -33,6 +34,8 @@ enum DynamicMark {
 }
 
 enum HairpinKind { crescendo, diminuendo }
+
+enum ArpeggioDirection { up, down }
 
 class Hairpin {
   const Hairpin({required this.start, required this.kind, this.end});
@@ -102,11 +105,13 @@ enum NoteValue {
     if (dots < 0 || dots > maxDots) {
       throw ArgumentError.value(dots, 'dots', 'Unsupported dot count.');
     }
-    return ticks * switch (dots) {
-      0 => 4,
-      1 => 6,
-      _ => 7,
-    } ~/ 4;
+    return ticks *
+        switch (dots) {
+          0 => 4,
+          1 => 6,
+          _ => 7,
+        } ~/
+        4;
   }
 }
 
@@ -171,6 +176,7 @@ class Measure {
     this.repeatStart = false,
     this.repeatEnd = false,
     this.dynamics = const {},
+    this.arpeggios = const {},
   });
 
   final List<NotationEvent> events;
@@ -180,6 +186,7 @@ class Measure {
   final bool repeatStart;
   final bool repeatEnd;
   final Map<int, DynamicMark> dynamics;
+  final Map<int, ArpeggioDirection> arpeggios;
 }
 
 class Score {

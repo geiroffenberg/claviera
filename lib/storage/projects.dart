@@ -23,12 +23,14 @@ class ProjectCodec {
   static String encode(Project project) {
     final score = project.editor.score;
     final hasArticulations = Voice.values.any(
-      (voice) => project.editor.eventsFor(voice).any(
-        (event) => event.articulations.isNotEmpty,
-      ),
+      (voice) => project.editor
+          .eventsFor(voice)
+          .any((event) => event.articulations.isNotEmpty),
     );
     return jsonEncode({
-      'version': hasArticulations
+      'version': project.editor.arpeggios.isNotEmpty
+          ? 8
+          : hasArticulations
           ? 7
           : project.editor.hairpins.isNotEmpty
           ? 6
@@ -49,6 +51,13 @@ class ProjectCodec {
       'unit': score.beatUnit,
       'key': score.keySignature,
       'measureCount': project.editor.measureCount,
+      if (project.editor.arpeggios.isNotEmpty)
+        'arpeggios': [
+          for (final entry
+              in (project.editor.arpeggios.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'tick': entry.key, 'direction': entry.value.name},
+        ],
       if (project.editor.hairpins.isNotEmpty)
         'hairpins': [
           for (final h
@@ -144,7 +153,7 @@ class ProjectCodec {
     }
 
     final version = raw['version'];
-    if (version is! int || version < 1 || version > 7) {
+    if (version is! int || version < 1 || version > 8) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -220,14 +229,8 @@ class ProjectCodec {
       return marks;
     }
 
-    final starts =
-        version >= 4
-        ? repeatMarks('repeatStarts')
-        : <int>{};
-    final ends =
-        version >= 4
-        ? repeatMarks('repeatEnds')
-        : <int>{};
+    final starts = version >= 4 ? repeatMarks('repeatStarts') : <int>{};
+    final ends = version >= 4 ? repeatMarks('repeatEnds') : <int>{};
     final layout = Score(
       title: name,
       beatsPerMeasure: beats,
@@ -239,6 +242,30 @@ class ProjectCodec {
       ],
     );
     final totalTicks = layout.measureStart(count);
+    final arpeggios = List.generate(count, (_) => <int, ArpeggioDirection>{});
+    if (version >= 8) {
+      final marks = raw['arpeggios'];
+      if (marks is! List) throw const FormatException('Invalid arpeggios.');
+      for (final item in marks) {
+        if (item is! Map<String, dynamic>) {
+          throw const FormatException('Invalid arpeggio.');
+        }
+        final tick = number(item, 'tick', 0, totalTicks - 1);
+        if (tick % 60 != 0) {
+          throw const FormatException('Invalid arpeggio timing.');
+        }
+        final measure = layout.measureAtTick(tick);
+        final offset = tick - layout.measureStart(measure);
+        if (arpeggios[measure].containsKey(offset)) {
+          throw const FormatException('Duplicate arpeggio.');
+        }
+        arpeggios[measure][offset] = enumValue(
+          ArpeggioDirection.values,
+          item['direction'],
+          'arpeggio direction',
+        );
+      }
+    }
     final dynamics = List.generate(count, (_) => <int, DynamicMark>{});
     if (version == 5 || (version > 5 && raw.containsKey('dynamics'))) {
       final marks = raw['dynamics'];
@@ -349,8 +376,7 @@ class ProjectCodec {
             throw const FormatException('Duplicate articulation.');
           }
         }
-        if ((pitches.isEmpty && articulations.isNotEmpty) ||
-            !validArticulations(articulations)) {
+        if (!validArticulations(articulations, isRest: pitches.isEmpty)) {
           throw const FormatException('Invalid articulations.');
         }
       }
@@ -382,6 +408,7 @@ class ProjectCodec {
             repeatStart: starts.contains(i),
             repeatEnd: ends.contains(i),
             dynamics: dynamics[i],
+            arpeggios: arpeggios[i],
           ),
       ],
     );

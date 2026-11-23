@@ -68,6 +68,7 @@ class _Snapshot {
     this.repeatEnds,
     this.dynamics,
     this.hairpins,
+    this.arpeggios,
   );
   final List<VoiceEvent> events;
   final int measureCount;
@@ -82,6 +83,7 @@ class _Snapshot {
   final Set<int> repeatEnds;
   final Map<int, DynamicMark> dynamics;
   final List<Hairpin> hairpins;
+  final Map<int, ArpeggioDirection> arpeggios;
 }
 
 class ScoreEditor {
@@ -118,11 +120,15 @@ class ScoreEditor {
             source.measureStart(i) + entry.key: entry.value,
       },
       _hairpins = List.of(source.hairpins),
+      _arpeggios = {
+        for (var i = 0; i < source.measures.length; i++)
+          for (final entry in source.measures[i].arpeggios.entries)
+            source.measureStart(i) + entry.key: entry.value,
+      },
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
       for (final event in source.measures[measure].events) {
-        if ((event.isRest && event.articulations.isNotEmpty) ||
-            !validArticulations(event.articulations)) {
+        if (!validArticulations(event.articulations, isRest: event.isRest)) {
           throw ArgumentError('Invalid note articulations.');
         }
         _events.add(
@@ -150,6 +156,16 @@ class ScoreEditor {
       }
     }
     _normalizeRests();
+    for (var measure = 0; measure < source.measures.length; measure++) {
+      for (final offset in source.measures[measure].arpeggios.keys) {
+        if (offset < 0 ||
+            offset >= source.timeAt(measure).ticks ||
+            offset % 60 != 0 ||
+            pitchCountAt(source.measureStart(measure) + offset) < 2) {
+          throw ArgumentError('Invalid arpeggio.');
+        }
+      }
+    }
   }
 
   final Score _source;
@@ -163,6 +179,7 @@ class ScoreEditor {
   Set<int> _repeatEnds;
   Map<int, DynamicMark> _dynamics;
   List<Hairpin> _hairpins;
+  Map<int, ArpeggioDirection> _arpeggios;
   Set<int> get repeatStarts => Set.unmodifiable(_repeatStarts);
   Set<int> get repeatEnds => Set.unmodifiable(_repeatEnds);
   Map<int, int> get tempoChanges => Map.unmodifiable(_tempos);
@@ -170,6 +187,11 @@ class ScoreEditor {
   Map<int, int> get keyChanges => Map.unmodifiable(_keys);
   Map<int, DynamicMark> get dynamicChanges => Map.unmodifiable(_dynamics);
   List<Hairpin> get hairpins => List.unmodifiable(_hairpins);
+  Map<int, ArpeggioDirection> get arpeggios => Map.unmodifiable(_arpeggios);
+
+  int pitchCountAt(int tick) => _events
+      .where((event) => event.start == tick)
+      .fold(0, (total, event) => total + event.pitches.length);
   Hairpin? get pendingHairpin =>
       _hairpins.where((hairpin) => hairpin.end == null).firstOrNull;
 
@@ -277,6 +299,7 @@ class ScoreEditor {
     Set.of(_repeatEnds),
     Map.of(_dynamics),
     List.of(_hairpins),
+    Map.of(_arpeggios),
   );
   void _restore(_Snapshot snapshot) {
     _events = List.of(snapshot.events);
@@ -292,6 +315,7 @@ class ScoreEditor {
     _repeatEnds = Set.of(snapshot.repeatEnds);
     _dynamics = Map.of(snapshot.dynamics);
     _hairpins = List.of(snapshot.hairpins);
+    _arpeggios = Map.of(snapshot.arpeggios);
   }
 
   void _commit(void Function() change) {
@@ -299,6 +323,7 @@ class ScoreEditor {
     try {
       change();
       _normalizeRests();
+      _arpeggios.removeWhere((tick, _) => pitchCountAt(tick) < 2);
     } on EditException {
       _restore(before);
       rethrow;
@@ -345,6 +370,20 @@ class ScoreEditor {
         _dynamics.remove(tick);
       } else {
         _dynamics[tick] = mark;
+      }
+    });
+  }
+
+  void setArpeggio(int tick, ArpeggioDirection? direction) {
+    if (direction != null && pitchCountAt(tick) < 2) {
+      throw const EditException('Select at least two simultaneous notes.');
+    }
+    if (_arpeggios[tick] == direction) return;
+    _commit(() {
+      if (direction == null) {
+        _arpeggios.remove(tick);
+      } else {
+        _arpeggios[tick] = direction;
       }
     });
   }
@@ -541,6 +580,12 @@ class ScoreEditor {
           kind: h.kind,
         ),
     ];
+    final arpeggios = <int, ArpeggioDirection>{};
+    for (final entry in _arpeggios.entries) {
+      final measure = measureAtTick(entry.key);
+      arpeggios[newStarts[measure] + entry.key - oldStarts[measure]] =
+          entry.value;
+    }
     for (final event in events) {
       final measure = measureAtTick(event.start);
       final pitches = <Pitch>[];
@@ -577,6 +622,7 @@ class ScoreEditor {
       _events = updated;
       _dynamics = dynamics;
       _hairpins = hairpins;
+      _arpeggios = arpeggios;
     });
   }
 
@@ -639,6 +685,7 @@ class ScoreEditor {
             duration: part,
             voice: rest.voice,
             staff: rest.staff,
+            articulations: remaining == part ? rest.articulations : const {},
           ),
         );
         first = false;
@@ -772,17 +819,27 @@ class ScoreEditor {
 
   void setArticulations(int id, Set<Articulation> articulations) {
     final event = eventById(id);
-    if (event == null || event.isRest) {
-      throw const EditException('Select a note first.');
+    if (event == null) {
+      throw const EditException('Select a note or rest first.');
     }
-    if (!validArticulations(articulations)) {
+    if (!validArticulations(articulations, isRest: event.isRest)) {
       throw const EditException('Those articulations cannot be combined.');
     }
     if (event.articulations.length == articulations.length &&
         event.articulations.containsAll(articulations)) {
       return;
     }
-    _commit(() => _replace(event, event.copyWith(articulations: articulations)));
+    _commit(
+      () => _replace(
+        event,
+        event.copyWith(
+          articulations: articulations,
+          generatedRest: event.isRest && articulations.isNotEmpty
+              ? false
+              : event.generatedRest,
+        ),
+      ),
+    );
   }
 
   void changePitch(int id, int index, Pitch pitch) {
@@ -893,9 +950,15 @@ class ScoreEditor {
             eventId: event.id,
             tieFromPrevious: !event.isRest && position > event.start,
             tieToNext: !event.isRest && remaining > part,
-            articulations: position == event.start
-                ? event.articulations
-                : const {},
+            articulations: {
+              if (position == event.start)
+                ...event.articulations.where(
+                  (mark) => mark != Articulation.fermata,
+                ),
+              if (remaining == part &&
+                  event.articulations.contains(Articulation.fermata))
+                Articulation.fermata,
+            },
           ),
         );
         position += part;
@@ -921,6 +984,11 @@ class ScoreEditor {
               for (final entry in _dynamics.entries)
                 if (entry.key >= measureStart(i) &&
                     entry.key < measureStart(i + 1))
+                  entry.key - measureStart(i): entry.value,
+            },
+            arpeggios: {
+              for (final entry in _arpeggios.entries)
+                if (measureAtTick(entry.key) == i)
                   entry.key - measureStart(i): entry.value,
             },
           ),

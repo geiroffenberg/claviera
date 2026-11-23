@@ -27,6 +27,77 @@ NotationEvent event(
 );
 
 void main() {
+  testWidgets('arpeggio clears displaced noteheads and accidentals', (tester) async {
+    const score = Score(
+      title: '',
+      beatsPerMeasure: 4,
+      beatUnit: 4,
+      measures: [
+        Measure(
+          arpeggios: {0: ArpeggioDirection.up},
+          events: [
+            NotationEvent(
+              startTick: 0,
+              durationTicks: 960,
+              voice: Voice.v2,
+              staff: Staff.treble,
+              pitches: [
+                Pitch(diatonicStep: 30, midiNote: 65, accidental: Accidental.sharp),
+                Pitch(diatonicStep: 31, midiNote: 66),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final canvas = TestRecordingCanvas();
+    ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+      canvas,
+      Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+    );
+    final path = canvas.invocations
+        .where((call) => call.invocation.memberName == #drawPath)
+        .single.invocation.positionalArguments.first as Path;
+    expect(path.getBounds().right, lessThan(ScorePainter.eventXFor(score, 0, 0, 10) - 26.5));
+  });
+
+  testWidgets('a fermata is drawn on notes and rests', (tester) async {
+    int paragraphs({required bool rest, required bool fermata}) {
+      final score = Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                pitches: rest ? [] : [const Pitch(diatonicStep: 30, midiNote: 64)],
+                articulations: fermata ? {Articulation.fermata} : {},
+              ),
+            ],
+          ),
+        ],
+      );
+      final canvas = TestRecordingCanvas();
+      ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      return canvas.invocations
+          .where((call) => call.invocation.memberName == #drawParagraph)
+          .length;
+    }
+
+    for (final rest in [false, true]) {
+      expect(paragraphs(rest: rest, fermata: true),
+          paragraphs(rest: rest, fermata: false) + 1);
+    }
+  });
+
   test('stem directions and dotted beam counts', () {
     expect(Voice.values.map(stemPointsUp), [true, false, true, false]);
     expect([960, 720, 480, 360, 240, 180, 120, 60].map(beamCount), [

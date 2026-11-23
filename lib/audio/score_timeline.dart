@@ -1,6 +1,28 @@
 import '../editor/score_editor.dart';
 import '../models/score.dart';
 
+class FermataHolds {
+  FermataHolds(List<VoiceEvent> events, (int, int) span) {
+    final byEnd = <int, int>{};
+    for (final event in events) {
+      if (!event.articulations.contains(Articulation.fermata) ||
+          event.end <= span.$1 ||
+          event.end > span.$2) {
+        continue;
+      }
+      final extra = event.duration ~/ 2;
+      if (extra > (byEnd[event.end] ?? 0)) byEnd[event.end] = extra;
+    }
+    holds = byEnd.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+  }
+
+  late final List<MapEntry<int, int>> holds;
+
+  int extraTicksAt(int tick) => holds
+      .where((hold) => hold.key <= tick)
+      .fold(0, (total, hold) => total + hold.value);
+}
+
 class ScoreTimeline {
   ScoreTimeline(ScoreEditor editor, {int startMeasure = 0}) {
     RangeError.checkValueInInterval(
@@ -39,8 +61,10 @@ class ScoreTimeline {
         editor.measureStart(entry.key + 1),
         editor.measureStart(entry.value),
       ]) {
-        if (events.any((event) =>
-            !event.isRest && event.start < boundary && event.end > boundary)) {
+        if (events.any(
+          (event) =>
+              !event.isRest && event.start < boundary && event.end > boundary,
+        )) {
           throw StateError(
             'A tied note crosses a repeat boundary. Edit the tie before playback or MIDI export.',
           );

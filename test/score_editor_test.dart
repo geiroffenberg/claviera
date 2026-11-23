@@ -12,35 +12,143 @@ const c = Pitch(diatonicStep: 28, midiNote: 60);
 const d = Pitch(diatonicStep: 29, midiNote: 62);
 
 void main() {
-  test('double-dotted values keep exact timing and split correctly at barlines', () {
-    expect(
-      [
-        NoteValue.whole,
-        NoteValue.half,
-        NoteValue.quarter,
-        NoteValue.eighth,
-        NoteValue.sixteenth,
-      ].map((value) => value.duration(dots: 2)),
-      [6720, 3360, 1680, 840, 420],
+  test('arpeggios combine voices, follow meter changes and undo deletion', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure(), Measure()],
+      ),
     );
-    expect(() => NoteValue.thirtySecond.duration(dots: 2), throwsArgumentError);
-    final editor = ScoreEditor(emptyScore);
-    editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
-    final id = editor.append(
+    final first = editor.append(
       voice: Voice.v1,
       staff: Staff.treble,
-      duration: NoteValue.quarter.duration(dots: 2),
+      duration: 960,
+      pitch: c,
+      measure: 1,
+    );
+    expect(
+      () => editor.setArpeggio(3840, ArpeggioDirection.up),
+      throwsA(isA<EditException>()),
+    );
+    final second = editor.append(
+      voice: Voice.v2,
+      staff: Staff.bass,
+      duration: 960,
+      pitch: d,
+      measure: 1,
+    );
+    editor.setArpeggio(3840, ArpeggioDirection.down);
+    expect(editor.score.measures[1].arpeggios, {0: ArpeggioDirection.down});
+    editor.setScoreSettings(beats: 3, unit: 4, key: 0);
+    expect(editor.arpeggios, {2880: ArpeggioDirection.down});
+    editor.delete(second);
+    expect(editor.arpeggios, isEmpty);
+    editor.undo();
+    expect(editor.arpeggios, {2880: ArpeggioDirection.down});
+    expect(editor.eventById(first)!.start, 2880);
+    editor.undo();
+    expect(editor.arpeggios, {3840: ArpeggioDirection.down});
+  });
+
+  test('a fermata on a generated rest survives normalization and undo', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              NotationEvent(
+                startTick: 960,
+                durationTicks: 960,
+                voice: Voice.v1,
+                staff: Staff.treble,
+                pitches: [c],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final rest = editor.eventsFor(Voice.v1).first;
+    expect(rest.generatedRest, isTrue);
+    editor.setArticulations(rest.id, {Articulation.fermata});
+    expect(editor.eventById(rest.id)!.articulations, {Articulation.fermata});
+    editor.undo();
+    expect(editor.eventById(rest.id)!.generatedRest, isTrue);
+    editor.redo();
+    expect(editor.eventById(rest.id)!.articulations, {Articulation.fermata});
+  });
+
+  test('fermatas work on rests and the last segment of tied notes', () {
+    final editor = ScoreEditor(emptyScore);
+    final rest = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 2880,
+    );
+    editor.setArticulations(rest, {Articulation.fermata});
+    final note = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
       pitch: c,
     );
+    editor.setArticulations(note, {Articulation.accent, Articulation.fermata});
     final segments = editor.score.measures
         .expand((measure) => measure.events)
-        .where((event) => event.eventId == id)
+        .where((event) => event.eventId == note)
         .toList();
-    expect(segments.map((event) => event.durationTicks), [960, 720]);
-    expect(segments.first.tieToNext, isTrue);
-    expect(segments.last.tieFromPrevious, isTrue);
-    expect(editor.eventById(id)!.duration, 1680);
+    expect(segments.first.articulations, {Articulation.accent});
+    expect(segments.last.articulations, {Articulation.fermata});
+    expect(editor.eventById(rest)!.articulations, {Articulation.fermata});
+    editor.undo();
+    expect(editor.eventById(note)!.articulations, isEmpty);
+    editor.redo();
+    expect(
+      editor.eventById(note)!.articulations,
+      contains(Articulation.fermata),
+    );
   });
+
+  test(
+    'double-dotted values keep exact timing and split correctly at barlines',
+    () {
+      expect(
+        [
+          NoteValue.whole,
+          NoteValue.half,
+          NoteValue.quarter,
+          NoteValue.eighth,
+          NoteValue.sixteenth,
+        ].map((value) => value.duration(dots: 2)),
+        [6720, 3360, 1680, 840, 420],
+      );
+      expect(
+        () => NoteValue.thirtySecond.duration(dots: 2),
+        throwsArgumentError,
+      );
+      final editor = ScoreEditor(emptyScore);
+      editor.append(voice: Voice.v1, staff: Staff.treble, duration: 2880);
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: NoteValue.quarter.duration(dots: 2),
+        pitch: c,
+      );
+      final segments = editor.score.measures
+          .expand((measure) => measure.events)
+          .where((event) => event.eventId == id)
+          .toList();
+      expect(segments.map((event) => event.durationTicks), [960, 720]);
+      expect(segments.first.tieToNext, isTrue);
+      expect(segments.last.tieFromPrevious, isTrue);
+      expect(editor.eventById(id)!.duration, 1680);
+    },
+  );
 
   test(
     'articulations belong to the chord attack and survive edits and undo',

@@ -89,6 +89,16 @@ The app requests both landscape orientations at startup.
   When a score has accents but no dynamics, playback uses an mf baseline
   instead of maximum volume so accents can be heard; scores without accents
   retain their previous volume.
+- Select a note, chord or rest and use **Articulations** to add a fermata.
+  It appears on the final segment of a tied note and is included in PDF and
+  MusicXML. Playback and MIDI pause the entire score at its end for half its
+  written duration; simultaneous fermatas ending together use the longest
+  hold. Shortened articulations may stop sounding before the pause.
+- In **Articulations**, choose **Arpeggio up** or **Arpeggio down** when at
+  least two notes start together. The mark combines those notes across voices
+  and staves; selecting it again removes it. Playback and MIDI spread the
+  attacks briefly without delaying later events, and PDF and MusicXML include
+  the mark. If editing leaves fewer than two notes, the mark is removed.
 - Select a note or rest, or enter one in Write mode, then use **Dynamics** on
   the left rail to add or change a marking from ppp to fff. A marking applies
   to the whole piano from that score position until the next marking, regardless

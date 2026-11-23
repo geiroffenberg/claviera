@@ -46,6 +46,7 @@ class PrintLayout {
           repeatStart: firstBar.repeatStart,
           repeatEnd: firstBar.repeatEnd,
           dynamics: firstBar.dynamics,
+          arpeggios: firstBar.arpeggios,
         ),
         ...score.measures.skip(first + 1).take(end - first - 1),
       ],

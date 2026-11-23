@@ -7,6 +7,122 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('arpeggio can combine single notes in different voices', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    final origin = tester.getTopLeft(canvas);
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    await tester.tap(find.text('V2'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 230));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Articulations'));
+    await tester.pumpAndSettle();
+    final up = find.byWidgetPredicate(
+      (widget) => widget is FilterChip && widget.label is Text &&
+          (widget.label as Text).textSpan!.toPlainText() == 'Arpeggio up',
+    );
+    await tester.ensureVisible(up);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(up).onSelected, isNotNull);
+    await tester.tap(up);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    final score = tester.widget<ScoreViewport>(find.byType(ScoreViewport)).score;
+    expect(score.measures.first.arpeggios, {0: ArpeggioDirection.up});
+    expect(score.measures.first.events.where((event) => !event.isRest), hasLength(2));
+  });
+
+  testWidgets('arpeggio requires simultaneous notes and can change direction', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    final origin = tester.getTopLeft(canvas);
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    Finder chip(String label) => find.byWidgetPredicate(
+      (widget) =>
+          widget is FilterChip &&
+          widget.label is Text &&
+          (widget.label as Text).textSpan!.toPlainText() == label,
+    );
+    await tester.tap(find.byTooltip('Articulations'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(chip('Arpeggio up'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(chip('Arpeggio up')).onSelected, isNull);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Chord stack'));
+    await tester.tapAt(origin + const Offset(160, 105));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Articulations'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(chip('Arpeggio up'));
+    await tester.pumpAndSettle();
+    await tester.tap(chip('Arpeggio up'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(chip('Arpeggio up')).selected, isTrue);
+    await tester.tap(chip('Arpeggio down'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(chip('Arpeggio up')).selected, isFalse);
+    expect(tester.widget<FilterChip>(chip('Arpeggio down')).selected, isTrue);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    final viewport = tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    expect(viewport.score.measures.first.arpeggios, {
+      0: ArpeggioDirection.down,
+    });
+  });
+
+  testWidgets(
+    'fermata can be toggled on a rest without offering note accents',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(const ClavieraApp());
+      await tester.tap(find.byTooltip('Note'));
+      await tester.pump();
+      final canvas = find.byKey(const ValueKey('score-canvas'));
+      await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Articulations'));
+      await tester.pumpAndSettle();
+      final fermata = find.byWidgetPredicate(
+        (widget) =>
+            widget is FilterChip &&
+            widget.label is Text &&
+            (widget.label as Text).textSpan!.toPlainText().contains('Fermata'),
+      );
+      expect(fermata, findsOneWidget);
+      expect(find.byType(FilterChip), findsOneWidget);
+      await tester.tap(fermata);
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilterChip>(fermata).selected, isTrue);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ScoreViewport>(find.byType(ScoreViewport))
+            .selectedEvent!
+            .articulations,
+        {Articulation.fermata},
+      );
+      await tester.tap(find.byTooltip('Articulations'));
+      await tester.pumpAndSettle();
+      await tester.tap(fermata);
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilterChip>(fermata).selected, isFalse);
+    },
+  );
+
   testWidgets('dot button cycles note values and respects short-note limits', (
     tester,
   ) async {

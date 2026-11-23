@@ -31,7 +31,12 @@ class MusicXmlExport {
       );
     }
 
-    void note(NotationEvent event, Pitch? pitch, bool chord) {
+    void note(
+      NotationEvent event,
+      Pitch? pitch,
+      bool chord,
+      ArpeggioDirection? arpeggio,
+    ) {
       final duration = event.durationTicks;
       final notation = notationForDuration(duration);
       if (notation == null) {
@@ -91,6 +96,7 @@ class MusicXmlExport {
           text('staff', event.staff == Staff.treble ? 1 : 2);
           if (event.tieFromPrevious ||
               event.tieToNext ||
+              (pitch != null && arpeggio != null) ||
               (!chord && event.articulations.isNotEmpty)) {
             xml.element(
               'notations',
@@ -101,12 +107,28 @@ class MusicXmlExport {
                 if (event.tieToNext) {
                   xml.element('tied', attributes: {'type': 'start'});
                 }
-                if (!chord && event.articulations.isNotEmpty) {
+                if (!chord &&
+                    event.articulations.contains(Articulation.fermata)) {
+                  xml.element('fermata');
+                }
+                if (pitch != null && arpeggio != null) {
+                  xml.element(
+                    'arpeggiate',
+                    attributes: {'number': '1', 'direction': arpeggio.name},
+                  );
+                }
+                if (!chord &&
+                    event.articulations.any(
+                      (mark) => mark != Articulation.fermata,
+                    )) {
                   xml.element(
                     'articulations',
                     nest: () {
                       for (final mark in Articulation.values) {
-                        if (!event.articulations.contains(mark)) continue;
+                        if (mark == Articulation.fermata ||
+                            !event.articulations.contains(mark)) {
+                          continue;
+                        }
                         if (mark == Articulation.marcato) {
                           final above = !stemPointsUp(event.voice);
                           xml.element(
@@ -305,10 +327,13 @@ class MusicXmlExport {
                         );
                       }
                       if (event.isRest) {
-                        note(event, null, false);
+                        note(event, null, false, null);
                       } else {
+                        final arpeggio = event.tieFromPrevious
+                            ? null
+                            : measure.arpeggios[event.startTick];
                         for (var i = 0; i < event.pitches.length; i++) {
-                          note(event, event.pitches[i], i > 0);
+                          note(event, event.pitches[i], i > 0, arpeggio);
                         }
                       }
                       cursor = event.startTick + event.durationTicks;

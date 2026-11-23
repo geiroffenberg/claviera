@@ -12,6 +12,86 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test(
+    'exports one linked arpeggio across voices and only on tied attacks',
+    () {
+      final editor = ScoreEditor(blankScore);
+      final chord = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 4800,
+        pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+      );
+      editor.addPitch(chord, const Pitch(diatonicStep: 30, midiNote: 64));
+      editor.append(
+        voice: Voice.v2,
+        staff: Staff.bass,
+        duration: 960,
+        pitch: const Pitch(diatonicStep: 21, midiNote: 48),
+      );
+      editor.setArpeggio(0, ArpeggioDirection.down);
+      final xml = XmlDocument.parse(
+        utf8.decode(MusicXmlExport.encode(editor, 120, 'Arpeggio')),
+      );
+      final marks = xml.findAllElements('arpeggiate').toList();
+      expect(marks, hasLength(3));
+      expect(
+        marks.map((mark) => mark.getAttribute('direction')),
+        everyElement('down'),
+      );
+      expect(
+        marks.map((mark) => mark.getAttribute('number')),
+        everyElement('1'),
+      );
+      expect(
+        xml
+            .findAllElements('measure')
+            .toList()[1]
+            .findAllElements('arpeggiate'),
+        isEmpty,
+      );
+    },
+  );
+
+  test('exports fermatas on rests and the last segment of a tied chord', () {
+    final editor = ScoreEditor(blankScore);
+    final rest = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 2880,
+    );
+    final chord = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 1920,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.addPitch(chord, const Pitch(diatonicStep: 30, midiNote: 64));
+    editor.setArticulations(rest, {Articulation.fermata});
+    editor.setArticulations(chord, {Articulation.fermata, Articulation.accent});
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Fermata')),
+    );
+    final fermatas = xml.findAllElements('fermata').toList();
+    expect(fermatas, hasLength(2));
+    expect(
+      fermatas.first.parentElement!.parentElement!.getElement('rest'),
+      isNotNull,
+    );
+    expect(
+      fermatas.last.parentElement!.parentElement!.getElement('chord'),
+      isNull,
+    );
+    expect(
+      fermatas.last.parentElement!.getElement('tied')!.getAttribute('type'),
+      'stop',
+    );
+    expect(
+      xml.findAllElements('articulations').single.getElement('accent'),
+      isNotNull,
+    );
+  });
+
   test('exports both dots and exact durations for notes and rests', () {
     final editor = ScoreEditor(blankScore);
     editor.append(
@@ -28,7 +108,11 @@ void main() {
     final xml = XmlDocument.parse(
       utf8.decode(MusicXmlExport.encode(editor, 120, 'Dots')),
     );
-    final notes = xml.findAllElements('measure').first.findElements('note').toList();
+    final notes = xml
+        .findAllElements('measure')
+        .first
+        .findElements('note')
+        .toList();
     expect(notes.map((note) => note.getElement('duration')!.innerText), [
       '1680',
       '420',
@@ -56,7 +140,9 @@ void main() {
       Articulation.tenuto,
       Articulation.marcato,
     });
-    final xml = XmlDocument.parse(utf8.decode(MusicXmlExport.encode(editor, 120, 'Marks')));
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Marks')),
+    );
     final marks = xml.findAllElements('articulations').single;
     expect(marks.childElements.map((e) => e.name.local), [
       'staccato',

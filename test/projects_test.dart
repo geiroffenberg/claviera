@@ -49,6 +49,64 @@ class FailingStore extends MemoryStore {
 }
 
 void main() {
+  test('arpeggios round-trip and malformed arpeggios are rejected', () {
+    final editor = ScoreEditor(blankScore);
+    final id = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: fSharp,
+    );
+    editor.addPitch(id, natural);
+    editor.setArpeggio(0, ArpeggioDirection.down);
+    final encoded = ProjectCodec.encode(
+      Project(name: 'Arpeggio', tempo: 120, editor: editor),
+    );
+    final document = jsonDecode(encoded) as Map<String, dynamic>;
+    expect(document['version'], 8);
+    expect(ProjectCodec.decode(encoded).editor.arpeggios, {
+      0: ArpeggioDirection.down,
+    });
+    final marks = document['arpeggios'] as List;
+    marks.add(marks.first);
+    expect(
+      () => ProjectCodec.decode(jsonEncode(document)),
+      throwsFormatException,
+    );
+    marks.removeLast();
+    (marks.first as Map<String, dynamic>)['tick'] = 960;
+    expect(
+      () => ProjectCodec.decode(jsonEncode(document)),
+      throwsFormatException,
+    );
+  });
+
+  test('fermatas on notes and rests survive saving', () {
+    final editor = ScoreEditor(blankScore);
+    final rest = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+    );
+    final note = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: fSharp,
+    );
+    editor.setArticulations(rest, {Articulation.fermata});
+    editor.setArticulations(note, {Articulation.fermata, Articulation.accent});
+    final saved = ProjectCodec.encode(
+      Project(name: 'Fermata', tempo: 120, editor: editor),
+    );
+    final restored = ProjectCodec.decode(saved).editor.eventsFor(Voice.v1);
+    expect(restored.first.articulations, {Articulation.fermata});
+    expect(restored.last.articulations, {
+      Articulation.fermata,
+      Articulation.accent,
+    });
+  });
+
   test('double-dotted events survive project round-trip', () {
     final editor = ScoreEditor(blankScore);
     editor.append(
@@ -62,50 +120,71 @@ void main() {
       staff: Staff.treble,
       duration: NoteValue.sixteenth.duration(dots: 2),
     );
-    final encoded = ProjectCodec.encode(Project(name: 'Dots', tempo: 120, editor: editor));
+    final encoded = ProjectCodec.encode(
+      Project(name: 'Dots', tempo: 120, editor: editor),
+    );
     final restored = ProjectCodec.decode(encoded);
     expect(ProjectCodec.encode(restored), encoded);
     expect(
-      restored.editor.score.measures.first.events.map((event) => event.durationTicks),
+      restored.editor.score.measures.first.events.map(
+        (event) => event.durationTicks,
+      ),
       [1680, 420],
     );
   });
 
-  test('articulations round-trip with other project features and reject invalid marks', () {
-    final editor = ScoreEditor(blankScore);
-    final id = editor.append(
-      voice: Voice.v1,
-      staff: Staff.treble,
-      duration: 960,
-      pitch: fSharp,
-    );
-    editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
-    editor.setMeasureTempo(1, 80);
-    editor.setMeasureSignatures(1, key: 1);
-    editor.setMeasureRepeats(1, start: false, end: true);
-    editor.setDynamic(0, DynamicMark.mf);
-    editor.startHairpin(960, HairpinKind.crescendo);
-    editor.endHairpin(1920);
-    final encoded = ProjectCodec.encode(Project(name: 'Test', tempo: 120, editor: editor));
-    final document = jsonDecode(encoded) as Map<String, dynamic>;
-    expect(document['version'], 7);
-    final restored = ProjectCodec.decode(encoded);
-    expect(ProjectCodec.encode(restored), encoded);
-    expect(restored.editor.eventsFor(Voice.v1).first.articulations, {
-      Articulation.staccato,
-      Articulation.accent,
-    });
-    final event = (document['events'] as List).first as Map<String, dynamic>;
-    event['articulations'] = ['staccato', 'staccato'];
-    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
-    event['articulations'] = ['staccatissimo', 'tenuto'];
-    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
-    event['articulations'] = ['unknown'];
-    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
-    event['articulations'] = ['accent'];
-    event['pitches'] = [];
-    expect(() => ProjectCodec.decode(jsonEncode(document)), throwsFormatException);
-  });
+  test(
+    'articulations round-trip with other project features and reject invalid marks',
+    () {
+      final editor = ScoreEditor(blankScore);
+      final id = editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: fSharp,
+      );
+      editor.setArticulations(id, {Articulation.staccato, Articulation.accent});
+      editor.setMeasureTempo(1, 80);
+      editor.setMeasureSignatures(1, key: 1);
+      editor.setMeasureRepeats(1, start: false, end: true);
+      editor.setDynamic(0, DynamicMark.mf);
+      editor.startHairpin(960, HairpinKind.crescendo);
+      editor.endHairpin(1920);
+      final encoded = ProjectCodec.encode(
+        Project(name: 'Test', tempo: 120, editor: editor),
+      );
+      final document = jsonDecode(encoded) as Map<String, dynamic>;
+      expect(document['version'], 7);
+      final restored = ProjectCodec.decode(encoded);
+      expect(ProjectCodec.encode(restored), encoded);
+      expect(restored.editor.eventsFor(Voice.v1).first.articulations, {
+        Articulation.staccato,
+        Articulation.accent,
+      });
+      final event = (document['events'] as List).first as Map<String, dynamic>;
+      event['articulations'] = ['staccato', 'staccato'];
+      expect(
+        () => ProjectCodec.decode(jsonEncode(document)),
+        throwsFormatException,
+      );
+      event['articulations'] = ['staccatissimo', 'tenuto'];
+      expect(
+        () => ProjectCodec.decode(jsonEncode(document)),
+        throwsFormatException,
+      );
+      event['articulations'] = ['unknown'];
+      expect(
+        () => ProjectCodec.decode(jsonEncode(document)),
+        throwsFormatException,
+      );
+      event['articulations'] = ['accent'];
+      event['pitches'] = [];
+      expect(
+        () => ProjectCodec.decode(jsonEncode(document)),
+        throwsFormatException,
+      );
+    },
+  );
 
   test('round trip preserves logical ties, voices, rests and settings', () {
     final editor = ScoreEditor(blankScore);
