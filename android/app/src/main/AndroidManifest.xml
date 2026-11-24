@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:label="Claviera"
+        android:allowAudioPlaybackCapture="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

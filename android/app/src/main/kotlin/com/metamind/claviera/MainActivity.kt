@@ -30,11 +30,11 @@ class MainActivity : FlutterActivity() {
     private var stream = 0
     private var startedAt = 0L
     private var pendingStop: Runnable? = null
-    private var preparationStream = 0
-    private var preparationTask: Runnable? = null
-    private var preparationResult: MethodChannel.Result? = null
-    private val scheduledPlayback = mutableListOf<Runnable>()
-    private val playbackStreams = mutableSetOf<Int>()
+    private val scorePlayer by lazy {
+        PianoScorePlayer(assets, roots) { message ->
+            channel?.invokeMethod("playbackError", message)
+        }
+    }
     private var channel: MethodChannel? = null
     private var pdfResult: MethodChannel.Result? = null
     private var pdfPages: List<ByteArray>? = null
@@ -208,8 +208,7 @@ class MainActivity : FlutterActivity() {
                         } else if (pool == null || pendingInit != null || loadingFailed) {
                             result.error("not_ready", "Piano samples are not ready.", null)
                         } else {
-                            startScore(notes)
-                            result.success(null)
+                            startScore(notes, result)
                         }
                     }
                     "stopScore" -> {
@@ -422,68 +421,22 @@ class MainActivity : FlutterActivity() {
             return
         }
         stopScore()
-        val sound = soundPool.play(samples.getValue(58), 0f, 0f, 1, 0, 1f)
-        if (sound == 0) {
-            result.error("play_failed", "Unable to prepare piano playback.", null)
-            return
-        }
-        preparationStream = sound
-        preparationResult = result
-        val task = Runnable {
-            preparationTask = null
-            preparationResult = null
-            result.success(true)
-        }
-        preparationTask = task
-        // Keep the output active before starting the score's clock.
-        handler.postDelayed(task, 200)
+        scorePlayer.prepare(result)
     }
 
-    private fun startScore(notes: List<Map<String, Int>>) {
+    private fun startScore(notes: List<Map<String, Int>>, result: MethodChannel.Result) {
         stopScore()
         pendingStop?.let(handler::removeCallbacks)
         pendingStop = null
         if (stream != 0) pool?.stop(stream)
         stream = 0
-        val epoch = SystemClock.uptimeMillis()
-        for (note in notes) {
-            val midi = note.getValue("midi")
-            val root = roots.minBy { abs(it - midi) }
-            val rate = 2.0.pow((midi - root) / 12.0).toFloat()
-            val start = note.getValue("startMs").toLong()
-            val end = note.getValue("endMs").toLong()
-            val volume = note.getValue("volume") / 127f
-            val playTask = Runnable {
-                val sound = pool?.play(samples.getValue(root), volume, volume, 1, 0, rate) ?: 0
-                if (sound == 0) {
-                    stopScore()
-                    channel?.invokeMethod("playbackError", "Unable to play a score note.")
-                } else {
-                    playbackStreams.add(sound)
-                    val stopTask = Runnable {
-                        pool?.stop(sound)
-                        playbackStreams.remove(sound)
-                    }
-                    scheduledPlayback.add(stopTask)
-                    handler.postAtTime(stopTask, epoch + end)
-                }
-            }
-            scheduledPlayback.add(playTask)
-            handler.postAtTime(playTask, epoch + start)
-        }
+        scorePlayer.play(notes.map {
+            PianoNote(it.getValue("midi"), it.getValue("startMs"), it.getValue("endMs"), it.getValue("volume"))
+        }, result)
     }
 
     private fun stopScore() {
-        preparationTask?.let(handler::removeCallbacks)
-        preparationTask = null
-        preparationResult?.success(false)
-        preparationResult = null
-        if (preparationStream != 0) pool?.stop(preparationStream)
-        preparationStream = 0
-        for (task in scheduledPlayback) handler.removeCallbacks(task)
-        scheduledPlayback.clear()
-        for (sound in playbackStreams) pool?.stop(sound)
-        playbackStreams.clear()
+        scorePlayer.stop()
     }
 
     private fun play(note: Int, result: MethodChannel.Result) {
@@ -533,6 +486,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         stopScore()
+        scorePlayer.close()
         pendingStop?.let(handler::removeCallbacks)
         pendingInit?.error("disposed", "Piano preview closed while loading.", null)
         pendingInit = null

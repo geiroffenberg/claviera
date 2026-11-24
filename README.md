@@ -80,6 +80,11 @@ extracted or shared; it is not strong protection against payment bypass.
   The current bar is shaded and sounding notes are highlighted; the previous
   editing selection returns when playback stops.
   The speaker button mutes note-entry preview only, not score playback.
+- Android score playback mixes all voices and pitch shifts into one music audio
+  stream before output, so internal-audio screen recorders receive the combined
+  score rather than separate pitched sample streams. Note-entry preview still
+  uses SoundPool. The score mix reserves headroom for simultaneous notes; its
+  overall level can differ from earlier builds, while relative dynamics remain.
 - Tap a bar number to open **Bar settings**, then choose **Tempo** or
   **Key and time signature**. Tempo changes apply until the next tempo
   marking, including during tied notes; the header BPM is the initial tempo.
