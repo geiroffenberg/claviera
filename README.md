@@ -12,8 +12,8 @@ The app requests both landscape orientations at startup.
 
 ## Using the editor
 
-- On Android, open **Menu > Open project > A Little Invention in D Minor** to
-  load the included original four-voice demo, with dynamics and hairpins.
+- On Android, open **Menu > Open project > Dream** to load the included demo
+  composition. It is installed as an editable project on first launch.
 - Open **Menu > Getting started** for a short guide to the basic controls.
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls

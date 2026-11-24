@@ -11,7 +11,6 @@ import '../audio/midi_export.dart';
 import '../audio/score_playback.dart';
 import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
-import '../models/demo_score.dart';
 import '../models/score.dart';
 import '../notation/score_painter.dart';
 import '../notation/musicxml_export.dart';
@@ -274,12 +273,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   Future<void> _initializeRecovery() async {
     try {
       if (Platform.isAndroid && widget.projectStore == null) {
+        final contents = await rootBundle.loadString(
+          'assets/demo/Dream.claviera',
+        );
+        final dream = ProjectCodec.decode(contents);
         await projectStore.ensureDemoProject(
-          Project(
-            name: demoScore.title,
-            tempo: 96,
-            editor: ScoreEditor(demoScore),
-          ),
+          Project(name: 'Dream', tempo: dream.tempo, editor: dream.editor),
         );
       }
       final draft = await projectStore.readRecovery();
@@ -319,15 +318,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       }
       if (mounted) setState(() => recoveryAvailable = true);
     } on FileSystemException catch (error) {
-      _storageError('Project storage unavailable: $error');
+      _storageError('Recovery unavailable: $error');
     } on PlatformException catch (error) {
-      _storageError(
-        'Project storage unavailable: ${error.message ?? error.code}',
-      );
+      _storageError('Recovery unavailable: ${error.message ?? error.code}');
     } on MissingPluginException {
-      _storageError('Project storage is unavailable.');
+      _storageError('Recovery storage is unavailable.');
+    } on FlutterError catch (error) {
+      _storageError('Bundled demo project could not be read: $error');
     } on FormatException catch (error) {
-      _storageError('Recovery draft could not be read: ${error.message}');
+      _storageError('Project data could not be read: ${error.message}');
     } finally {
       if (mounted) setState(() => checkingRecovery = false);
     }

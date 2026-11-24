@@ -58,6 +58,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - assets/demo/Dream.claviera
+
   fonts:
     - family: Bravura
       fonts:
