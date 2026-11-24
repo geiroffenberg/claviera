@@ -10,6 +10,26 @@ With Flutter and the Android SDK installed, connect an Android device or start a
 emulator, then run `flutter pub get` and `flutter run` from this directory.
 The app requests both landscape orientations at startup.
 
+### Google Play review access
+
+The Android Pro dialog includes a **Review access code** field. Supply a private,
+non-empty code at build time (replace the placeholder; do not commit the code):
+
+```sh
+flutter run --release --dart-define=CLAVIERA_REVIEW_CODE=YOUR_PRIVATE_CODE
+flutter build appbundle --release --dart-define=CLAVIERA_REVIEW_CODE=YOUR_PRIVATE_CODE
+```
+
+In Play Console's App content access instructions, provide the code and these
+steps: open **Menu > Upgrade to Pro**, enter the review access code, and tap
+**Activate review access**. The uploaded bundle must include the define.
+Without it, the field reports that review access is not configured.
+
+Review access works without billing availability and persists on that device
+separately from purchases. It is not a Google Play entitlement and is lost when
+app data is cleared. This offline code is embedded in the build and can be
+extracted or shared; it is not strong protection against payment bypass.
+
 ## Using the editor
 
 - On Android, open **Menu > Open project > Dream** to load the included demo

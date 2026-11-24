@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
@@ -12,19 +12,26 @@ class ProPurchaseService extends ProPurchaseController {
   ProPurchaseService({
     InAppPurchase? store,
     Future<SharedPreferences> Function()? preferences,
+    this.reviewAccessCode = const String.fromEnvironment(
+      'CLAVIERA_REVIEW_CODE',
+    ),
   }) : _storeOverride = store,
        _preferences = preferences ?? SharedPreferences.getInstance;
 
   static const productId = 'claviera_pro_unlock';
   static const _entitlementKey = 'claviera.pro.unlocked';
+  static const _reviewAccessKey = 'claviera.pro.reviewAccess';
 
+  final String reviewAccessCode;
   final InAppPurchase? _storeOverride;
   final Future<SharedPreferences> Function() _preferences;
-  final bool _isAndroid = Platform.isAndroid;
+  final bool _isAndroid = defaultTargetPlatform == TargetPlatform.android;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
   Future<void>? _initializeFuture;
   ProductDetails? _product;
   bool _isPro = false;
+  bool _hasReviewAccess = false;
+  bool _isRedeeming = false;
   bool _isAvailable = false;
   bool _isLoading = false;
   bool _purchasePending = false;
@@ -37,13 +44,14 @@ class ProPurchaseService extends ProPurchaseController {
   bool get isAndroid => _isAndroid;
 
   @override
-  bool get isPro => _isPro || !_isAndroid;
+  bool get isPro => _isPro || _hasReviewAccess || !_isAndroid;
 
   @override
   bool get isAvailable => _isAvailable;
 
   @override
-  bool get isBusy => _isLoading || _purchasePending || _isRestoring;
+  bool get isBusy =>
+      _isLoading || _purchasePending || _isRestoring || _isRedeeming;
 
   @override
   String? get localizedPrice => _product?.price;
@@ -74,6 +82,7 @@ class ProPurchaseService extends ProPurchaseController {
     try {
       final preferences = await _preferences();
       _isPro = preferences.getBool(_entitlementKey) ?? false;
+      _hasReviewAccess = preferences.getBool(_reviewAccessKey) ?? false;
       _notifyListeners();
     } on PlatformException catch (error) {
       _message =
@@ -251,6 +260,42 @@ class ProPurchaseService extends ProPurchaseController {
       _message = 'Restore failed: ${error.message ?? error.code}';
     } finally {
       _isRestoring = false;
+      _notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> redeemReviewCode(String code) async {
+    if (isBusy) return;
+    if (reviewAccessCode.isEmpty) {
+      _message = 'Review access is not configured in this build.';
+      _notifyListeners();
+      return;
+    }
+    if (code.trim().isEmpty || code.trim() != reviewAccessCode) {
+      _message = 'Invalid review access code.';
+      _notifyListeners();
+      return;
+    }
+    _isRedeeming = true;
+    _message = null;
+    _notifyListeners();
+    try {
+      final preferences = await _preferences();
+      final saved = await preferences.setBool(_reviewAccessKey, true);
+      if (saved) {
+        _hasReviewAccess = true;
+        _message = 'Claviera Pro is unlocked for review on this device.';
+      } else {
+        _message = 'Review access could not be saved. Please try again.';
+      }
+    } on PlatformException catch (error) {
+      _message =
+          'Review access could not be saved: ${error.message ?? error.code}';
+    } on MissingPluginException {
+      _message = 'Review access could not be saved on this device.';
+    } finally {
+      _isRedeeming = false;
       _notifyListeners();
     }
   }

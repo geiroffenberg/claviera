@@ -11,4 +11,5 @@ abstract class ProPurchaseController extends ChangeNotifier {
   Future<void> initialize();
   Future<void> buyPro();
   Future<void> restorePurchases();
+  Future<void> redeemReviewCode(String code);
 }

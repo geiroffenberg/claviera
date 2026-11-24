@@ -8,9 +8,35 @@ Future<void> showProUpgradeDialog(
 ) {
   return showDialog<void>(
     context: context,
-    builder: (context) => AnimatedBuilder(
+    builder: (context) => _ProUpgradeDialog(purchases: purchases),
+  );
+}
+
+class _ProUpgradeDialog extends StatefulWidget {
+  const _ProUpgradeDialog({required this.purchases});
+
+  final ProPurchaseController purchases;
+
+  @override
+  State<_ProUpgradeDialog> createState() => _ProUpgradeDialogState();
+}
+
+class _ProUpgradeDialogState extends State<_ProUpgradeDialog> {
+  final _reviewCode = TextEditingController();
+
+  @override
+  void dispose() {
+    _reviewCode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final purchases = widget.purchases;
+    return AnimatedBuilder(
       animation: purchases,
       builder: (context, _) => AlertDialog(
+        scrollable: true,
         title: const Text('Claviera Pro'),
         content: SizedBox(
           width: 420,
@@ -40,6 +66,32 @@ Future<void> showProUpgradeDialog(
                 ),
               const SizedBox(height: 8),
               const Text('One-time purchase. No subscription.'),
+              if (purchases.isAndroid && !purchases.isPro) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _reviewCode,
+                  enabled: !purchases.isBusy,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Review access code',
+                    helperText: 'For Google Play reviewers.',
+                  ),
+                  onSubmitted: purchases.isBusy
+                      ? null
+                      : purchases.redeemReviewCode,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: purchases.isBusy
+                        ? null
+                        : () => purchases.redeemReviewCode(_reviewCode.text),
+                    child: const Text('Activate review access'),
+                  ),
+                ),
+              ],
               if (!purchases.isAndroid) ...[
                 const SizedBox(height: 12),
                 const Text('Pro purchases are currently available on Android.'),
@@ -97,6 +149,6 @@ Future<void> showProUpgradeDialog(
             ),
         ],
       ),
-    ),
-  );
+    );
+  }
 }
