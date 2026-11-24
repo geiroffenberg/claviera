@@ -287,6 +287,37 @@ void main() {
     expect(decoded.editor.eventsFor(Voice.v2).single.start, 7680);
   });
 
+  test('explicit ties between notes survive project round trip', () {
+    final editor = ScoreEditor(blankScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: const Pitch(diatonicStep: 28, midiNote: 60),
+    );
+    editor.toggleTieToPrevious(next);
+
+    final encoded = ProjectCodec.encode(
+      Project(name: 'Tied', tempo: 120, editor: editor),
+    );
+    expect((jsonDecode(encoded) as Map<String, dynamic>)['version'], 10);
+    final decoded = ProjectCodec.decode(encoded);
+    final notes = decoded.editor.storedEventsFor(Voice.v1)
+        .where((event) => !event.isRest)
+        .toList();
+
+    expect(notes, hasLength(2));
+    expect(notes.first.tieToNext, isTrue);
+    expect(notes.last.tieFromPrevious, isTrue);
+    expect(ProjectCodec.encode(decoded), encoded);
+  });
+
   test('malformed, unsupported and overlapping projects are rejected', () {
     expect(() => ProjectCodec.decode('not json'), throwsFormatException);
     final document =

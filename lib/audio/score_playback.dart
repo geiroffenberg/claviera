@@ -65,9 +65,9 @@ class PlaybackPlan {
     }
 
     final timeline = ScoreTimeline(editor, startMeasure: startMeasure);
-    final offsets = arpeggioOffsets(timeline.events, editor.arpeggios);
+    final offsets = arpeggioOffsets(timeline.soundingEvents, editor.arpeggios);
     final dynamics = DynamicsTimeline(editor);
-    final hasAccents = timeline.events.any(
+    final hasAccents = timeline.soundingEvents.any(
       (event) =>
           event.articulations.contains(Articulation.accent) ||
           event.articulations.contains(Articulation.marcato),
@@ -137,7 +137,9 @@ class PlaybackPlan {
         if (barEnd >= span.$2) break;
         measure++;
       }
-      for (final event in playableEvents) {
+      for (final event in timeline.soundingEvents.where(
+        (event) => event.start >= span.$1 && event.end <= span.$2,
+      )) {
         for (var i = 0; i < event.pitches.length; i++) {
           final pitch = event.pitches[i];
           final start = event.start + (offsets[(event.id, i)] ?? 0);

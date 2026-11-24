@@ -706,6 +706,77 @@ void main() {
     expect(segments.last.tieFromPrevious, isTrue);
   });
 
+  test('separately entered matching notes can be tied and untied', () {
+    final editor = ScoreEditor(emptyScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+
+    editor.toggleTieToPrevious(next);
+    var notes = editor.score.measures.single.events
+        .where((event) => !event.isRest)
+        .toList();
+    expect(notes, hasLength(2));
+    expect(notes.first.tieToNext, isTrue);
+    expect(notes.last.tieFromPrevious, isTrue);
+
+    editor.undo();
+    notes = editor.score.measures.single.events
+        .where((event) => !event.isRest)
+        .toList();
+    expect(notes.first.tieToNext, isFalse);
+    expect(notes.last.tieFromPrevious, isFalse);
+
+    editor.redo();
+    notes = editor.score.measures.single.events
+        .where((event) => !event.isRest)
+        .toList();
+    expect(notes.first.tieToNext, isTrue);
+    expect(notes.last.tieFromPrevious, isTrue);
+
+    editor.toggleTieToPrevious(next);
+    notes = editor.score.measures.single.events
+        .where((event) => !event.isRest)
+        .toList();
+    expect(notes.first.tieToNext, isFalse);
+    expect(notes.last.tieFromPrevious, isFalse);
+  });
+
+  test('write tie rejects a different pitch without inserting it', () {
+    final editor = ScoreEditor(emptyScore);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+
+    expect(
+      () => editor.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: d,
+        tieToPrevious: true,
+      ),
+      throwsA(isA<EditException>()),
+    );
+    expect(
+      editor.eventsFor(Voice.v1).where((event) => !event.isRest),
+      hasLength(1),
+    );
+    expect(editor.nextTick(Voice.v1), 960);
+  });
+
   test(
     'a tied note can consume generated rest in the next bar without moving later notes',
     () {

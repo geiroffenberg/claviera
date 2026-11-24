@@ -21,7 +21,7 @@ class MidiExport {
       throw ArgumentError.value(initialTempo, 'initialTempo');
     }
     final timeline = ScoreTimeline(editor);
-    final offsets = arpeggioOffsets(timeline.events, editor.arpeggios);
+    final offsets = arpeggioOffsets(timeline.soundingEvents, editor.arpeggios);
     final dynamics = DynamicsTimeline(editor);
     final events = <_MidiEvent>[];
     final extraChannels = [
@@ -88,7 +88,7 @@ class MidiExport {
           metadata(outputTick(tick), measure);
         }
       }
-      for (final event in timeline.events) {
+      for (final event in timeline.soundingEvents) {
         if (event.start < span.$1 || event.end > span.$2) continue;
         for (var i = 0; i < event.pitches.length; i++) {
           final pitch = event.pitches[i];

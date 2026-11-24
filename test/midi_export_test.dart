@@ -264,6 +264,30 @@ void main() {
     },
   );
 
+  test('tied adjacent notes export as one sustained MIDI note', () {
+    final editor = ScoreEditor(blankScore);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.toggleTieToPrevious(next);
+
+    final messages = parseMidi(MidiExport.encode(editor, 120));
+    final ons = messages.where((m) => m.status & 0xf0 == 0x90).toList();
+    final offs = messages.where((m) => m.status & 0xf0 == 0x80).toList();
+    expect(ons.map((m) => (m.tick, m.data[0])), [(0, 60)]);
+    expect(offs.map((m) => (m.tick, m.data[0])), [(1920, 60)]);
+  });
+
   test('encodes voices, chords, gaps, ties and overlapping same pitches', () {
     final editor = ScoreEditor(
       Score(

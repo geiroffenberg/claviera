@@ -359,6 +359,34 @@ void main() {
     );
   });
 
+  test('exports ties between adjacent same-pitch notes', () {
+    final editor = ScoreEditor(blankScore);
+    const c = Pitch(diatonicStep: 28, midiNote: 60);
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.toggleTieToPrevious(next);
+
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Tied')),
+    );
+    final notes = xml.findAllElements('note')
+        .where((note) => note.findElements('pitch').isNotEmpty)
+        .toList();
+    expect(notes, hasLength(2));
+    expect(notes.first.findElements('tie').single.getAttribute('type'), 'start');
+    expect(notes.last.findElements('tie').single.getAttribute('type'), 'stop');
+  });
+
   test('exports an empty score and rejects invalid tempo', () {
     final editor = ScoreEditor(blankScore);
     final xml = XmlDocument.parse(

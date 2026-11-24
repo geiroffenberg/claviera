@@ -32,8 +32,15 @@ class ProjectCodec {
           .storedEventsFor(voice)
           .any((event) => event.articulations.any((mark) => mark.isOrnament)),
     );
+    final hasTies = Voice.values.any(
+      (voice) => project.editor.storedEventsFor(voice).any(
+        (event) => event.tieFromPrevious || event.tieToNext,
+      ),
+    );
     return jsonEncode({
-      'version': hasOrnaments
+      'version': hasTies
+          ? 10
+          : hasOrnaments
           ? 9
           : project.editor.arpeggios.isNotEmpty
           ? 8
@@ -121,6 +128,10 @@ class ProjectCodec {
                 'duration': event.duration,
                 'voice': event.voice.name,
                 'staff': event.staff.name,
+                if (hasTies) ...{
+                  'tieFromPrevious': event.tieFromPrevious,
+                  'tieToNext': event.tieToNext,
+                },
                 if (event.articulations.isNotEmpty)
                   'articulations': [
                     for (final mark in Articulation.values)
@@ -160,7 +171,7 @@ class ProjectCodec {
     }
 
     final version = raw['version'];
-    if (version is! int || version < 1 || version > 9) {
+    if (version is! int || version < 1 || version > 10) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -352,6 +363,13 @@ class ProjectCodec {
       }
       final voice = enumValue(Voice.values, item['voice'], 'voice');
       final staff = enumValue(Staff.values, item['staff'], 'staff');
+      final tieFromPrevious = version >= 10
+          ? item['tieFromPrevious']
+          : false;
+      final tieToNext = version >= 10 ? item['tieToNext'] : false;
+      if (tieFromPrevious is! bool || tieToNext is! bool) {
+        throw const FormatException('Invalid tie.');
+      }
       final rawPitches = item['pitches'];
       if (rawPitches is! List) throw const FormatException('Invalid pitches.');
       final pitches = <Pitch>[];
@@ -401,6 +419,8 @@ class ProjectCodec {
           voice: voice,
           staff: staff,
           pitches: pitches,
+          tieFromPrevious: tieFromPrevious,
+          tieToNext: tieToNext,
           articulations: articulations,
         ),
       );

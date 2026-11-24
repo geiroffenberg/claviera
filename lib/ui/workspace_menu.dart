@@ -12,6 +12,8 @@ void showWorkspaceMenu(
   required VoidCallback onExportPdf,
   required VoidCallback onExportMidi,
   required VoidCallback onExportMusicXml,
+  required bool isPro,
+  required VoidCallback onUpgrade,
   required VoidCallback onBackup,
   required VoidCallback onRestoreBackup,
 }) {
@@ -31,6 +33,25 @@ void showWorkspaceMenu(
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
+                Tooltip(
+                  message: 'Upgrade to Pro',
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(
+                      Icons.workspace_premium_outlined,
+                      size: 18,
+                    ),
+                    label: Text(isPro ? 'Pro' : 'Upgrade'),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      onUpgrade();
+                    },
+                  ),
+                ),
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     minimumSize: Size.zero,
@@ -73,6 +94,12 @@ void showWorkspaceMenu(
             ListTile(
               leading: Icon(item.$1),
               title: Text(item.$2),
+              trailing: !isPro &&
+                      (item.$2 == 'Export PDF' ||
+                          item.$2 == 'Export MIDI' ||
+                          item.$2 == 'Export MusicXML')
+                  ? const Icon(Icons.lock_outline, size: 18)
+                  : null,
               onTap: () {
                 Navigator.pop(sheetContext);
                 item.$3();

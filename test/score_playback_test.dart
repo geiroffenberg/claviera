@@ -535,6 +535,36 @@ void main() {
     expect(second.segments.single.startTick, 0);
   });
 
+  test('adjacent tied notes sustain as one playback note', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [Measure()],
+      ),
+    );
+    editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    final next = editor.append(
+      voice: Voice.v1,
+      staff: Staff.treble,
+      duration: 960,
+      pitch: c,
+    );
+    editor.toggleTieToPrevious(next);
+
+    final plan = PlaybackPlan(editor, 120);
+    expect(
+      plan.notes.map((note) => (note.midi, note.startMs, note.endMs)),
+      [(60, 0, 1000)],
+    );
+  });
+
   test(
     'shortened tied notes do not highlight silent continuation segments',
     () {

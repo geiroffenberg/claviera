@@ -330,6 +330,70 @@ void main() {
     expect(viewport().selectedEvent!.durationTicks, 1680);
   });
 
+  testWidgets('ties work from both Write and Edit modes', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    final leftScroll = find.descendant(
+      of: find.byType(ListView).first,
+      matching: find.byType(Scrollable),
+    );
+    List<NotationEvent> notes() => tester
+        .widget<ScoreViewport>(find.byType(ScoreViewport))
+        .score
+        .measures
+        .expand((measure) => measure.events)
+        .where((event) => event.voice == Voice.v1 && !event.isRest)
+        .toList();
+
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    expect(notes(), hasLength(2));
+    expect(notes().first.tieToNext, isFalse);
+
+    await tester.scrollUntilVisible(
+      find.byTooltip('Write mode'),
+      -200,
+      scrollable: leftScroll,
+    );
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Tie to previous note'),
+      200,
+      scrollable: leftScroll,
+    );
+    await tester.tap(find.byTooltip('Tie to previous note'));
+    await tester.pump();
+    expect(notes().first.tieToNext, isTrue);
+    expect(notes().last.tieFromPrevious, isTrue);
+
+    await tester.scrollUntilVisible(
+      find.byTooltip('Edit mode'),
+      -200,
+      scrollable: leftScroll,
+    );
+    await tester.tap(find.byTooltip('Edit mode'));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Tie next note'),
+      200,
+      scrollable: leftScroll,
+    );
+    await tester.tap(find.byTooltip('Tie next note'));
+    await tester.pump();
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+
+    expect(notes(), hasLength(3));
+    expect(notes()[1].tieToNext, isTrue);
+    expect(notes()[2].tieFromPrevious, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mode toggles are grouped at the top of the left rail', (
     tester,
   ) async {

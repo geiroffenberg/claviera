@@ -20,6 +20,8 @@ class VoiceEvent {
     List<Pitch> pitches = const [],
     this.generatedRest = false,
     Set<Articulation> articulations = const {},
+    this.tieFromPrevious = false,
+    this.tieToNext = false,
   }) : pitches = List.unmodifiable(pitches),
        articulations = Set.unmodifiable(articulations);
 
@@ -31,6 +33,8 @@ class VoiceEvent {
   final List<Pitch> pitches;
   final bool generatedRest;
   final Set<Articulation> articulations;
+  final bool tieFromPrevious;
+  final bool tieToNext;
   bool get isRest => pitches.isEmpty;
   int get end => start + duration;
 
@@ -41,6 +45,8 @@ class VoiceEvent {
     List<Pitch>? pitches,
     bool? generatedRest,
     Set<Articulation>? articulations,
+    bool? tieFromPrevious,
+    bool? tieToNext,
   }) => VoiceEvent(
     id: id,
     start: start ?? this.start,
@@ -50,6 +56,8 @@ class VoiceEvent {
     pitches: pitches ?? this.pitches,
     generatedRest: generatedRest ?? this.generatedRest,
     articulations: articulations ?? this.articulations,
+    tieFromPrevious: tieFromPrevious ?? this.tieFromPrevious,
+    tieToNext: tieToNext ?? this.tieToNext,
   );
 }
 
@@ -180,6 +188,8 @@ class ScoreEditor {
             staff: event.staff,
             pitches: event.pitches,
             articulations: event.articulations,
+            tieFromPrevious: event.tieFromPrevious,
+            tieToNext: event.tieToNext,
           ),
         );
       }
@@ -197,6 +207,7 @@ class ScoreEditor {
     }
     _normalizeRests();
     try {
+      _validateTies();
       _resolvedEvents();
     } on EditException catch (error) {
       throw ArgumentError(error.message);
@@ -514,6 +525,7 @@ class ScoreEditor {
     try {
       change();
       _normalizeRests();
+      _validateTies();
       _arpeggios.removeWhere((tick, _) => pitchCountAt(tick) < 2);
       _resolvedEvents();
     } on EditException {
@@ -1158,12 +1170,121 @@ class ScoreEditor {
     _events[_events.indexOf(old)] = replacement;
   }
 
+  VoiceEvent? _previousEvent(VoiceEvent event) => storedEventsFor(
+    event.voice,
+  ).where((candidate) => candidate.end == event.start).lastOrNull;
+
+  VoiceEvent? _nextEvent(VoiceEvent event) => storedEventsFor(
+    event.voice,
+  ).where((candidate) => candidate.start == event.end).firstOrNull;
+
+  bool _samePitches(List<Pitch> first, List<Pitch> second) {
+    if (first.length != second.length) return false;
+    final left = List<Pitch>.of(first)
+      ..sort((a, b) {
+        final step = a.diatonicStep.compareTo(b.diatonicStep);
+        return step != 0 ? step : a.midiNote.compareTo(b.midiNote);
+      });
+    final right = List<Pitch>.of(second)
+      ..sort((a, b) {
+        final step = a.diatonicStep.compareTo(b.diatonicStep);
+        return step != 0 ? step : a.midiNote.compareTo(b.midiNote);
+      });
+    for (var i = 0; i < left.length; i++) {
+      if (left[i].diatonicStep != right[i].diatonicStep ||
+          left[i].midiNote != right[i].midiNote) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _requireTieable(
+    VoiceEvent? previous, {
+    required Voice voice,
+    required int start,
+    required List<Pitch> pitches,
+  }) {
+    if (previous == null ||
+        previous.voice != voice ||
+        previous.end != start ||
+        previous.isRest ||
+        pitches.isEmpty) {
+      throw const EditException(
+        'A tie needs a previous note in the same voice.',
+      );
+    }
+    if (!_samePitches(previous.pitches, pitches)) {
+      throw const EditException(
+        'A tie requires the same pitch as the previous note.',
+      );
+    }
+  }
+
+  void _validateTies() {
+    for (final voice in Voice.values) {
+      for (final event in storedEventsFor(voice)) {
+        if (event.tieFromPrevious) {
+          final previous = _previousEvent(event);
+          if (previous == null || !previous.tieToNext) {
+            throw const EditException(
+              'Tied notes must be consecutive and linked.',
+            );
+          }
+          _requireTieable(
+            previous,
+            voice: event.voice,
+            start: event.start,
+            pitches: event.pitches,
+          );
+        }
+        if (event.tieToNext) {
+          final next = _nextEvent(event);
+          if (next == null || !next.tieFromPrevious) {
+            throw const EditException(
+              'Tied notes must be consecutive and linked.',
+            );
+          }
+          _requireTieable(
+            event,
+            voice: next.voice,
+            start: next.start,
+            pitches: next.pitches,
+          );
+        }
+      }
+    }
+  }
+
+  VoiceEvent _removeTieLinks(VoiceEvent event) {
+    if (!event.tieFromPrevious && !event.tieToNext) return event;
+    if (event.tieFromPrevious) {
+      final previous = _previousEvent(event);
+      if (previous != null) {
+        _replace(previous, previous.copyWith(tieToNext: false));
+      }
+    }
+    if (event.tieToNext) {
+      final next = _nextEvent(event);
+      if (next != null) {
+        _replace(next, next.copyWith(tieFromPrevious: false));
+      }
+    }
+    final untied = event.copyWith(
+      tieFromPrevious: false,
+      tieToNext: false,
+    );
+    if (event.tieFromPrevious || event.tieToNext) _replace(event, untied);
+    return untied;
+  }
+
   int append({
     required Voice voice,
     required Staff staff,
     required int duration,
     Pitch? pitch,
     int? measure,
+    bool tieToPrevious = false,
   }) {
     if (duration <= 0 || duration % 60 != 0) {
       throw const EditException('Unsupported duration.');
@@ -1171,6 +1292,18 @@ class ScoreEditor {
     var id = 0;
     _commit(() {
       final start = nextTick(voice, measure: measure);
+      VoiceEvent? previous;
+      if (tieToPrevious) {
+        previous = storedEventsFor(
+          voice,
+        ).where((event) => event.end == start).lastOrNull;
+        _requireTieable(
+          previous,
+          voice: voice,
+          start: start,
+          pitches: pitch == null ? const [] : [pitch],
+        );
+      }
       if (start + duration > measureStart(_measureCount)) {
         throw const EditException('Add more bars before writing past the end.');
       }
@@ -1185,6 +1318,9 @@ class ScoreEditor {
         );
       }
       id = _nextId++;
+      if (previous != null) {
+        _replace(previous, previous.copyWith(tieToNext: true));
+      }
       _events.add(
         VoiceEvent(
           id: id,
@@ -1193,13 +1329,20 @@ class ScoreEditor {
           voice: voice,
           staff: staff,
           pitches: pitch == null ? [] : [pitch],
+          tieFromPrevious: tieToPrevious,
         ),
       );
     });
     return id;
   }
 
-  int replaceRest(int id, int duration, Pitch pitch, Staff staff) {
+  int replaceRest(
+    int id,
+    int duration,
+    Pitch pitch,
+    Staff staff, {
+    bool tieToPrevious = false,
+  }) {
     final rest = _storedEventById(id);
     if (rest == null || !rest.isRest) {
       throw const EditException('Select a rest first.');
@@ -1210,7 +1353,19 @@ class ScoreEditor {
     if (duration > rest.duration) {
       throw const EditException('The note is longer than the selected rest.');
     }
+    final previous = tieToPrevious ? _previousEvent(rest) : null;
+    if (tieToPrevious) {
+      _requireTieable(
+        previous,
+        voice: rest.voice,
+        start: rest.start,
+        pitches: [pitch],
+      );
+    }
     _commit(() {
+      if (previous != null) {
+        _replace(previous, previous.copyWith(tieToNext: true));
+      }
       _replace(
         rest,
         rest.copyWith(
@@ -1218,6 +1373,7 @@ class ScoreEditor {
           staff: staff,
           pitches: [pitch],
           generatedRest: false,
+          tieFromPrevious: tieToPrevious,
         ),
       );
       if (duration < rest.duration) {
@@ -1234,6 +1390,35 @@ class ScoreEditor {
       }
     });
     return id;
+  }
+
+  void toggleTieToPrevious(int id) {
+    final event = _storedEventById(id);
+    if (event == null || event.isRest) {
+      throw const EditException('Select a note to tie.');
+    }
+    final previous = _previousEvent(event);
+    if (event.tieFromPrevious) {
+      if (previous == null || !previous.tieToNext) {
+        throw const EditException('The previous tie could not be found.');
+      }
+      _commit(() {
+        _replace(previous, previous.copyWith(tieToNext: false));
+        _replace(event, event.copyWith(tieFromPrevious: false));
+      });
+      return;
+    }
+    _requireTieable(
+      previous,
+      voice: event.voice,
+      start: event.start,
+      pitches: event.pitches,
+    );
+    final prior = previous!;
+    _commit(() {
+      _replace(prior, prior.copyWith(tieToNext: true));
+      _replace(event, event.copyWith(tieFromPrevious: true));
+    });
   }
 
   void addPitch(int id, Pitch pitch) {
@@ -1344,15 +1529,21 @@ class ScoreEditor {
       );
     }
     _commit(() {
+      final editable = _removeTieLinks(event);
       if (event.isRest) {
-        _events.remove(event);
+        _events.remove(editable);
       } else if (pitchIndex != null && event.pitches.length > 1) {
-        final pitches = List<Pitch>.of(event.pitches)..removeAt(pitchIndex);
-        _replace(event, event.copyWith(pitches: pitches));
+        final pitches = List<Pitch>.of(editable.pitches)
+          ..removeAt(pitchIndex);
+        _replace(editable, editable.copyWith(pitches: pitches));
       } else {
         _replace(
-          event,
-          event.copyWith(pitches: [], generatedRest: true, articulations: {}),
+          editable,
+          editable.copyWith(
+            pitches: [],
+            generatedRest: true,
+            articulations: {},
+          ),
         );
       }
     });
@@ -1379,8 +1570,14 @@ class ScoreEditor {
             staff: event.staff,
             pitches: event.pitches,
             eventId: event.id,
-            tieFromPrevious: !event.isRest && position > event.start,
-            tieToNext: !event.isRest && remaining > part,
+            tieFromPrevious:
+                !event.isRest &&
+                (position > event.start ||
+                    (position == event.start && event.tieFromPrevious)),
+            tieToNext:
+                !event.isRest &&
+                (remaining > part ||
+                    (remaining == part && event.tieToNext)),
             articulations: {
               if (position == event.start)
                 ...event.articulations.where(

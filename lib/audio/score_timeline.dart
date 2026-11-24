@@ -5,7 +5,8 @@ class FermataHolds {
   FermataHolds(List<VoiceEvent> events, (int, int) span) {
     final byEnd = <int, int>{};
     for (final event in events) {
-      if (!event.articulations.contains(Articulation.fermata) ||
+      if (event.tieToNext ||
+          !event.articulations.contains(Articulation.fermata) ||
           event.end <= span.$1 ||
           event.end > span.$2) {
         continue;
@@ -32,6 +33,7 @@ class ScoreTimeline {
       'startMeasure',
     );
     events = [for (final voice in Voice.values) ...editor.eventsFor(voice)];
+    soundingEvents = _mergeTiedEvents(events);
     final starts = editor.repeatStarts;
     final ends = editor.repeatEnds;
     final destinations = <int, int>{};
@@ -63,7 +65,9 @@ class ScoreTimeline {
       ]) {
         if (events.any(
           (event) =>
-              !event.isRest && event.start < boundary && event.end > boundary,
+              !event.isRest &&
+              (event.start < boundary && event.end > boundary ||
+                  event.tieToNext && event.end == boundary),
         )) {
           throw StateError(
             'A tied note crosses a repeat boundary. Edit the tie before playback or MIDI export.',
@@ -96,5 +100,30 @@ class ScoreTimeline {
   }
 
   late final List<VoiceEvent> events;
+  late final List<VoiceEvent> soundingEvents;
   final List<(int, int)> spans = [];
+}
+
+List<VoiceEvent> _mergeTiedEvents(List<VoiceEvent> events) {
+  final merged = <VoiceEvent>[];
+  for (final event in events) {
+    if (!event.tieFromPrevious) {
+      merged.add(event);
+      continue;
+    }
+
+    final previousIndex = merged.lastIndexWhere(
+      (candidate) =>
+          candidate.voice == event.voice && candidate.end == event.start,
+    );
+    if (previousIndex < 0) {
+      throw StateError('A tied note has no preceding sounding note.');
+    }
+    final previous = merged[previousIndex];
+    merged[previousIndex] = previous.copyWith(
+      duration: previous.duration + event.duration,
+      tieToNext: event.tieToNext,
+    );
+  }
+  return merged;
 }

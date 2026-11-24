@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import '../audio/piano_preview.dart';
 import '../audio/midi_export.dart';
 import '../audio/score_playback.dart';
+import '../billing/pro_purchase_controller.dart';
+import '../billing/pro_purchase_service.dart';
 import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
 import '../models/score.dart';
@@ -18,14 +20,21 @@ import '../notation/print_layout.dart';
 import '../notation/score_viewport.dart';
 import '../storage/projects.dart';
 import 'workspace_menu.dart';
+import 'pro_upgrade_dialog.dart';
 
 enum WorkspaceMode { write, edit }
 
 class WorkspaceScreen extends StatefulWidget {
-  const WorkspaceScreen({super.key, this.pianoPreview, this.projectStore});
+  const WorkspaceScreen({
+    super.key,
+    this.pianoPreview,
+    this.projectStore,
+    this.proPurchaseController,
+  });
 
   final PianoPreview? pianoPreview;
   final ProjectStore? projectStore;
+  final ProPurchaseController? proPurchaseController;
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
 }
@@ -38,10 +47,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   String? projectId;
   late String savedState;
   late final PianoPreview piano;
+  late final ProPurchaseController proPurchases;
+  late final bool ownsProPurchases;
   Voice voice = Voice.v1;
   NoteValue noteValue = NoteValue.quarter;
   WorkspaceMode mode = WorkspaceMode.write;
   bool rest = false;
+  bool tieArmed = false;
   int dots = 0;
   bool chordStack = false;
   int? selectedId;
@@ -71,6 +83,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   PlaybackFrame? playbackFrame;
   int tempo = 120;
   BarClipboard? barClipboard;
+  bool get hasPro => proPurchases.isPro;
 
   VoiceEvent? get selected => editor.eventById(selectedId);
   int get duration => noteValue.duration(dots: dots);
@@ -91,7 +104,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       Project(name: projectName, tempo: tempo, editor: editor);
   bool get dirty => ProjectCodec.encode(project) != savedState;
 
+  void _toggleTie() {
+    if (mode == WorkspaceMode.edit) {
+      final event = selected;
+      if (event == null || event.isRest) return;
+      _perform(() => editor.toggleTieToPrevious(event.id));
+    } else {
+      setState(() => tieArmed = !tieArmed);
+    }
+  }
+
   Future<void> _exportMusicXml() async {
+    if (!await _requirePro()) return;
     if (exportingMusicXml) return;
     setState(() => exportingMusicXml = true);
     try {
@@ -126,6 +150,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   Future<void> _exportMidi() async {
+    if (!await _requirePro()) return;
     if (exportingMidi) return;
     setState(() => exportingMidi = true);
     try {
@@ -158,6 +183,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   Future<void> _exportPdf() async {
+    if (!await _requirePro()) return;
     if (exportingPdf) return;
     setState(() => exportingPdf = true);
     try {
@@ -247,6 +273,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   @override
   void initState() {
     super.initState();
+    ownsProPurchases = widget.proPurchaseController == null;
+    proPurchases = widget.proPurchaseController ?? ProPurchaseService();
+    proPurchases.addListener(_onProPurchaseChanged);
+    if (proPurchases.isAndroid) unawaited(proPurchases.initialize());
     playbackTicker = createTicker(_updatePlayback);
     projectStore = widget.projectStore ?? ProjectStore();
     savedState = ProjectCodec.encode(project);
@@ -269,6 +299,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       }
     });
   }
+
+  void _onProPurchaseChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<bool> _requirePro() async {
+    if (hasPro) return true;
+    await showProUpgradeDialog(context, proPurchases);
+    return false;
+  }
+
+  Future<void> _showProUpgrade() => showProUpgradeDialog(context, proPurchases);
 
   Future<void> _initializeRecovery() async {
     try {
@@ -595,6 +637,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     WidgetsBinding.instance.removeObserver(this);
     playbackTicker.dispose();
     piano.dispose();
+    proPurchases.removeListener(_onProPurchaseChanged);
+    if (ownsProPurchases) proPurchases.dispose();
     super.dispose();
   }
 
@@ -1246,159 +1290,204 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, update) {
-          final event = editor.eventById(id)!;
-          final marks = event.articulations;
-          final portato =
-              marks.contains(Articulation.staccato) &&
-              marks.contains(Articulation.tenuto);
-          void toggle(Articulation? mark) {
-            final next = Set<Articulation>.of(marks);
-            if (mark == null) {
-              next.remove(Articulation.staccatissimo);
-              if (portato) {
-                next.removeAll({Articulation.staccato, Articulation.tenuto});
-              } else {
-                next.addAll({Articulation.staccato, Articulation.tenuto});
-              }
-            } else if (!next.remove(mark)) {
-              if (mark == Articulation.staccatissimo) {
-                next.removeAll({Articulation.staccato, Articulation.tenuto});
-              } else if (mark == Articulation.staccato ||
-                  mark == Articulation.tenuto) {
+        builder: (context, update) => AnimatedBuilder(
+          animation: proPurchases,
+          builder: (context, _) {
+            final event = editor.eventById(id)!;
+            final marks = event.articulations;
+            final proUnlocked = hasPro;
+            final portato =
+                marks.contains(Articulation.staccato) &&
+                marks.contains(Articulation.tenuto);
+            void toggle(Articulation? mark) {
+              final next = Set<Articulation>.of(marks);
+              if (mark == null) {
                 next.remove(Articulation.staccatissimo);
-              } else if (mark == Articulation.accent) {
-                next.remove(Articulation.marcato);
-              } else if (mark == Articulation.marcato) {
-                next.remove(Articulation.accent);
-              } else if (mark.isOrnament) {
-                next.removeWhere((item) => item.isOrnament);
+                if (portato) {
+                  next.removeAll({Articulation.staccato, Articulation.tenuto});
+                } else {
+                  next.addAll({Articulation.staccato, Articulation.tenuto});
+                }
+              } else if (!next.remove(mark)) {
+                if (mark == Articulation.staccatissimo) {
+                  next.removeAll({Articulation.staccato, Articulation.tenuto});
+                } else if (mark == Articulation.staccato ||
+                    mark == Articulation.tenuto) {
+                  next.remove(Articulation.staccatissimo);
+                } else if (mark == Articulation.accent) {
+                  next.remove(Articulation.marcato);
+                } else if (mark == Articulation.marcato) {
+                  next.remove(Articulation.accent);
+                } else if (mark.isOrnament) {
+                  next.removeWhere((item) => item.isOrnament);
+                }
+                next.add(mark);
               }
-              next.add(mark);
+              _perform(() => editor.setArticulations(id, next));
+              update(() {});
             }
-            _perform(() => editor.setArticulations(id, next));
-            update(() {});
-          }
 
-          final options = [
-            if (!event.isRest) ...[
-              (Articulation.staccato, 'Staccato', '\uE4A2'),
-              (Articulation.staccatissimo, 'Staccatissimo', '\uE4A6'),
-              (Articulation.tenuto, 'Tenuto', '\uE4A4'),
-              (null, 'Portato', '\uE4B2'),
-              (Articulation.accent, 'Accent', '\uE4A0'),
-              (Articulation.marcato, 'Marcato', '\uE4AC'),
-              (Articulation.trill, 'Trill', '\uE566'),
-              (Articulation.upperMordent, 'Upper mordent', '\uE56C'),
-              (Articulation.lowerMordent, 'Lower mordent', '\uE56D'),
-              (Articulation.turn, 'Turn', '\uE567'),
-              (Articulation.invertedTurn, 'Inverted turn', '\uE568'),
-            ],
-            (Articulation.fermata, 'Fermata', '\uE4C0'),
-          ];
-          return AlertDialog(
-            title: const Text('Articulations'),
-            titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-            content: SizedBox(
-              width: 440,
-              child: SingleChildScrollView(
-                child: LayoutBuilder(
-                  builder: (context, constraints) => Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      for (final (mark, label, glyph) in options)
-                        SizedBox(
-                          width: (constraints.maxWidth - 8) / 2,
-                          child: FilterChip(
-                            label: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: glyph,
-                                    style: const TextStyle(
-                                      fontFamily: 'Bravura',
-                                      fontSize: 22,
-                                    ),
-                                  ),
-                                  TextSpan(text: ' $label'),
-                                ],
-                              ),
-                              style: const TextStyle(fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            selected: mark == null
-                                ? portato
-                                : marks.contains(mark),
-                            showCheckmark: false,
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            onSelected: (_) => toggle(mark),
-                          ),
-                        ),
-                      if (!event.isRest)
-                        for (final direction in ArpeggioDirection.values)
+            final options = [
+              if (!event.isRest) ...[
+                (Articulation.staccato, 'Staccato', '\uE4A2'),
+                (Articulation.staccatissimo, 'Staccatissimo', '\uE4A6'),
+                (Articulation.tenuto, 'Tenuto', '\uE4A4'),
+                (null, 'Portato', '\uE4B2'),
+                (Articulation.accent, 'Accent', '\uE4A0'),
+                (Articulation.marcato, 'Marcato', '\uE4AC'),
+                (Articulation.trill, 'Trill', '\uE566'),
+                (Articulation.upperMordent, 'Upper mordent', '\uE56C'),
+                (Articulation.lowerMordent, 'Lower mordent', '\uE56D'),
+                (Articulation.turn, 'Turn', '\uE567'),
+                (Articulation.invertedTurn, 'Inverted turn', '\uE568'),
+              ],
+              (Articulation.fermata, 'Fermata', '\uE4C0'),
+            ];
+            return AlertDialog(
+              title: const Text('Articulations'),
+              titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final (mark, label, glyph) in options)
                           SizedBox(
                             width: (constraints.maxWidth - 8) / 2,
                             child: FilterChip(
-                              avatar: Icon(
-                                direction == ArpeggioDirection.up
-                                    ? Icons.arrow_upward
-                                    : Icons.arrow_downward,
-                                size: 16,
-                              ),
                               label: Text.rich(
-                                TextSpan(text: 'Arpeggio ${direction.name}'),
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: glyph,
+                                      style: const TextStyle(
+                                        fontFamily: 'Bravura',
+                                        fontSize: 22,
+                                      ),
+                                    ),
+                                    TextSpan(text: ' $label'),
+                                    if (!proUnlocked)
+                                      const WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: Icon(
+                                          Icons.lock_outline,
+                                          size: 13,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                                 style: const TextStyle(fontSize: 13),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              selected:
-                                  editor.arpeggios[event.start] == direction,
+                              selected: mark == null
+                                  ? portato
+                                  : marks.contains(mark),
                               showCheckmark: false,
                               visualDensity: VisualDensity.compact,
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
-                              onSelected: editor.pitchCountAt(event.start) < 2
-                                  ? null
-                                  : (_) {
-                                      _perform(
-                                        () => editor.setArpeggio(
-                                          event.start,
-                                          editor.arpeggios[event.start] ==
-                                                  direction
-                                              ? null
-                                              : direction,
-                                        ),
-                                      );
-                                      update(() {});
-                                    },
+                              onSelected: (_) {
+                                if (!proUnlocked) {
+                                  _showProUpgrade();
+                                } else {
+                                  toggle(mark);
+                                }
+                              },
                             ),
                           ),
-                    ],
+                        if (!event.isRest)
+                          for (final direction in ArpeggioDirection.values)
+                            SizedBox(
+                              width: (constraints.maxWidth - 8) / 2,
+                              child: FilterChip(
+                                avatar: Icon(
+                                  direction == ArpeggioDirection.up
+                                      ? Icons.arrow_upward
+                                      : Icons.arrow_downward,
+                                  size: 16,
+                                ),
+                                label: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: 'Arpeggio ${direction.name}',
+                                      ),
+                                      if (!proUnlocked)
+                                        const WidgetSpan(
+                                          alignment:
+                                              PlaceholderAlignment.middle,
+                                          child: Icon(
+                                            Icons.lock_outline,
+                                            size: 13,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                selected:
+                                    editor.arpeggios[event.start] == direction,
+                                showCheckmark: false,
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                onSelected:
+                                    !proUnlocked ||
+                                        editor.pitchCountAt(event.start) >= 2
+                                    ? (_) {
+                                        if (!proUnlocked) {
+                                          _showProUpgrade();
+                                          return;
+                                        }
+                                        _perform(
+                                          () => editor.setArpeggio(
+                                            event.start,
+                                            editor.arpeggios[event.start] ==
+                                                    direction
+                                                ? null
+                                                : direction,
+                                          ),
+                                        );
+                                        update(() {});
+                                      }
+                                    : null,
+                              ),
+                            ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Done'),
-              ),
-            ],
-          );
-        },
+              actions: [
+                if (!hasPro)
+                  TextButton.icon(
+                    onPressed: _showProUpgrade,
+                    icon: const Icon(Icons.workspace_premium_outlined),
+                    label: const Text('Upgrade to Pro'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
   Future<void> _dynamicPalette(int tick) async {
     final pending = editor.pendingHairpin;
-    if (pending != null) {
+    if (pending != null && hasPro) {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
@@ -1424,68 +1513,106 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     final current = editor.dynamicChanges[tick];
     final chosen = await showDialog<DynamicMark?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Dynamics (both staves)'),
-        content: SizedBox(
-          width: 440,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
+      builder: (context) => AnimatedBuilder(
+        animation: proPurchases,
+        builder: (context, _) {
+          final proUnlocked = hasPro;
+          return AlertDialog(
+            title: const Text('Dynamics (both staves)'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final mark in DynamicMark.values)
-                      SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: ChoiceChip(
-                          label: Text(mark.name),
-                          selected: current == mark,
-                          showCheckmark: false,
-                          visualDensity: VisualDensity.compact,
-                          labelPadding: EdgeInsets.zero,
-                          onSelected: (_) => Navigator.pop(context, mark),
-                        ),
+                    if (!proUnlocked) ...[
+                      const Text(
+                        'Dynamics and hairpins are included with Pro.',
                       ),
+                      const SizedBox(height: 8),
+                    ],
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        for (final mark in DynamicMark.values)
+                          SizedBox(
+                            width: proUnlocked ? 48 : 64,
+                            height: 48,
+                            child: ChoiceChip(
+                              avatar: proUnlocked
+                                  ? null
+                                  : const Icon(Icons.lock_outline, size: 12),
+                              label: Text(mark.name),
+                              selected: current == mark,
+                              showCheckmark: false,
+                              visualDensity: VisualDensity.compact,
+                              labelPadding: EdgeInsets.zero,
+                              onSelected: (_) {
+                                if (!proUnlocked) {
+                                  _showProUpgrade();
+                                } else {
+                                  Navigator.pop(context, mark);
+                                }
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final (kind, label) in [
+                          (HairpinKind.crescendo, 'Crescendo start'),
+                          (HairpinKind.diminuendo, 'Diminuendo start'),
+                        ])
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              if (!proUnlocked) {
+                                _showProUpgrade();
+                              } else {
+                                Navigator.pop(context);
+                                _perform(() => editor.startHairpin(tick, kind));
+                              }
+                            },
+                            icon: proUnlocked
+                                ? const Icon(Icons.show_chart)
+                                : const Icon(Icons.lock_outline, size: 16),
+                            label: Text(label),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final (kind, label) in [
-                      (HairpinKind.crescendo, 'Crescendo start'),
-                      (HairpinKind.diminuendo, 'Diminuendo start'),
-                    ])
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _perform(() => editor.startHairpin(tick, kind));
-                        },
-                        child: Text(label),
-                      ),
-                  ],
+              ),
+            ),
+            actions: [
+              if (current != null)
+                TextButton(
+                  onPressed: () {
+                    if (!proUnlocked) {
+                      _showProUpgrade();
+                    } else {
+                      Navigator.pop(context);
+                      _perform(() => editor.setDynamic(tick, null));
+                    }
+                  },
+                  child: const Text('Remove'),
                 ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          if (current != null)
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _perform(() => editor.setDynamic(tick, null));
-              },
-              child: const Text('Remove'),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
+              if (!proUnlocked)
+                TextButton.icon(
+                  onPressed: _showProUpgrade,
+                  icon: const Icon(Icons.workspace_premium_outlined),
+                  label: const Text('Upgrade to Pro'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
       ),
     );
     if (!mounted || chosen == null) return;
@@ -1493,6 +1620,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   Future<void> _hairpinOptions(int start) async {
+    if (!hasPro) {
+      await _showProUpgrade();
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1769,6 +1900,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
               accidental: pitch.accidental,
             )
           : pitch;
+      if (tieArmed && (rest || chordStack)) {
+        throw const EditException(
+          'Tie mode applies to single note entry, not rests or chord stacking.',
+        );
+      }
       if (chordStack) {
         if (rest) {
           throw const EditException('Turn off Rest to add a chord pitch.');
@@ -1789,7 +1925,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           duration,
           writtenPitch,
           staff,
+          tieToPrevious: tieArmed,
         );
+        tieArmed = false;
         replaceSelectedRest = false;
         pitchIndex = 0;
       } else {
@@ -1799,7 +1937,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           duration: duration,
           pitch: rest ? null : writtenPitch,
           measure: selectedMeasure,
+          tieToPrevious: tieArmed,
         );
+        tieArmed = false;
         selectedMeasure = editor.measureAtTick(
           editor.eventById(selectedId)!.end - 1,
         );
@@ -1941,6 +2081,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               mode = mode == WorkspaceMode.write
                                   ? WorkspaceMode.edit
                                   : WorkspaceMode.write;
+                              tieArmed = false;
                               preview = null;
                             }),
                             selected: mode == WorkspaceMode.edit,
@@ -1948,7 +2089,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           _button(
                             rest ? 'Rest' : 'Note',
                             rest ? Icons.hotel : Icons.music_note,
-                            () => setState(() => rest = !rest),
+                            () => setState(() {
+                              rest = !rest;
+                              if (rest) tieArmed = false;
+                            }),
                             selected: rest,
                           ),
                           const Divider(),
@@ -1977,11 +2121,30 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               _ => 'No dots',
                             },
                           ),
+                          _button(
+                            mode == WorkspaceMode.write
+                                ? 'Tie next note'
+                                : 'Tie to previous note',
+                            Icons.link,
+                            mode == WorkspaceMode.edit
+                                ? event == null || event.isRest
+                                      ? null
+                                      : _toggleTie
+                                : rest || chordStack
+                                ? null
+                                : _toggleTie,
+                            selected: mode == WorkspaceMode.write
+                                ? tieArmed
+                                : event?.tieFromPrevious ?? false,
+                          ),
                           const Divider(),
                           _button(
                             'Chord stack',
                             Icons.library_add,
-                            () => setState(() => chordStack = !chordStack),
+                            () => setState(() {
+                              chordStack = !chordStack;
+                              tieArmed = false;
+                            }),
                             selected: chordStack,
                           ),
                           _textButton(
@@ -2265,6 +2428,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onExportPdf: _exportPdf,
                               onExportMidi: _exportMidi,
                               onExportMusicXml: _exportMusicXml,
+                              isPro: hasPro,
+                              onUpgrade: _showProUpgrade,
                               onBackup: _backupProject,
                               onRestoreBackup: _restoreProjectBackup,
                               onRedo: () => _perform(() {
