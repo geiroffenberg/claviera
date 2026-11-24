@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:claviera/editor/score_editor.dart';
 import 'package:claviera/models/blank_score.dart';
+import 'package:claviera/models/demo_score.dart';
 import 'package:claviera/models/score.dart';
 import 'package:claviera/storage/projects.dart';
 import 'package:claviera/ui/workspace_screen.dart';
@@ -338,6 +339,48 @@ void main() {
     expect((await reopened.load(second)).tempo, 60);
     expect(() => reopened.load('../bad'), throwsFormatException);
   });
+
+  test(
+    'the original demo installs once and reopens with all four voices',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('claviera-demo-test-');
+      addTearDown(() => dir.delete(recursive: true));
+      final store = ProjectStore(directory: () async => dir);
+      final project = Project(
+        name: demoScore.title,
+        tempo: 96,
+        editor: ScoreEditor(demoScore),
+      );
+
+      await store.ensureDemoProject(project);
+      await store.ensureDemoProject(
+        Project(
+          name: 'Replacement',
+          tempo: 120,
+          editor: ScoreEditor(blankScore),
+        ),
+      );
+
+      final projects = await store.list();
+      expect(projects.map((item) => item.name), [demoScore.title]);
+      final loaded = await store.load(ProjectStore.demoProjectId);
+      expect(
+        Voice.values.every(
+          (voice) => loaded.editor
+              .storedEventsFor(voice)
+              .any((event) => !event.generatedRest),
+        ),
+        isTrue,
+      );
+      expect(loaded.editor.dynamicChanges.values.toSet(), {
+        DynamicMark.p,
+        DynamicMark.mp,
+        DynamicMark.f,
+      });
+      expect(loaded.editor.hairpins, hasLength(3));
+      expect(loaded.editor.measureCount, 8);
+    },
+  );
 
   test('recovery drafts persist separately from saved projects', () async {
     final dir = await Directory.systemTemp.createTemp(

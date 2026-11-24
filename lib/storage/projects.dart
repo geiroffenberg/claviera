@@ -456,6 +456,8 @@ class ProjectStore {
   ProjectStore({Future<Directory> Function()? directory})
     : _directory = directory ?? _appDirectory;
 
+  static const demoProjectId = '0-1';
+
   final Future<Directory> Function() _directory;
   static const _channel = MethodChannel('claviera/projects');
 
@@ -515,6 +517,12 @@ class ProjectStore {
   Future<void> clearRecovery() async {
     final file = File('${(await _root()).path}/recovery.draft');
     if (await file.exists()) await file.delete();
+  }
+
+  Future<void> ensureDemoProject(Project project) async {
+    final file = File('${(await _root()).path}/$demoProjectId.json');
+    if (await file.exists()) return;
+    await save(project, id: demoProjectId);
   }
 
   Future<List<StoredProject>> list() async {

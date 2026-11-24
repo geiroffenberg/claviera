@@ -11,6 +11,7 @@ import '../audio/midi_export.dart';
 import '../audio/score_playback.dart';
 import '../editor/score_editor.dart';
 import '../models/blank_score.dart';
+import '../models/demo_score.dart';
 import '../models/score.dart';
 import '../notation/score_painter.dart';
 import '../notation/musicxml_export.dart';
@@ -272,6 +273,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   Future<void> _initializeRecovery() async {
     try {
+      if (Platform.isAndroid && widget.projectStore == null) {
+        await projectStore.ensureDemoProject(
+          Project(
+            name: demoScore.title,
+            tempo: 96,
+            editor: ScoreEditor(demoScore),
+          ),
+        );
+      }
       final draft = await projectStore.readRecovery();
       if (!mounted) return;
       if (draft != null) {
@@ -309,11 +319,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       }
       if (mounted) setState(() => recoveryAvailable = true);
     } on FileSystemException catch (error) {
-      _storageError('Recovery unavailable: $error');
+      _storageError('Project storage unavailable: $error');
     } on PlatformException catch (error) {
-      _storageError('Recovery unavailable: ${error.message ?? error.code}');
+      _storageError(
+        'Project storage unavailable: ${error.message ?? error.code}',
+      );
     } on MissingPluginException {
-      _storageError('Recovery storage is unavailable.');
+      _storageError('Project storage is unavailable.');
     } on FormatException catch (error) {
       _storageError('Recovery draft could not be read: ${error.message}');
     } finally {
