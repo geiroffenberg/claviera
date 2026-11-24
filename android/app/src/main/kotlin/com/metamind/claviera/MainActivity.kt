@@ -1,4 +1,4 @@
-package com.example.claviera
+package com.metamind.claviera
 
 import android.media.AudioAttributes
 import android.media.SoundPool

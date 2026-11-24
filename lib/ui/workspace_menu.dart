@@ -78,15 +78,6 @@ void showWorkspaceMenu(
                 item.$3();
               },
             ),
-          for (final item in const [
-            (Icons.tune, 'Time and measures'),
-            (Icons.settings_outlined, 'Settings / ad-free'),
-          ])
-            ListTile(
-              leading: Icon(item.$1),
-              title: Text(item.$2),
-              enabled: false,
-            ),
         ],
       ),
     ),
