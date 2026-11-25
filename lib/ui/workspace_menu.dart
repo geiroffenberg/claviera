@@ -94,7 +94,8 @@ void showWorkspaceMenu(
             ListTile(
               leading: Icon(item.$1),
               title: Text(item.$2),
-              trailing: !isPro &&
+              trailing:
+                  !isPro &&
                       (item.$2 == 'Export PDF' ||
                           item.$2 == 'Export MIDI' ||
                           item.$2 == 'Export MusicXML')
@@ -123,21 +124,26 @@ void _showGettingStarted(BuildContext context) {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final (heading, description) in const [
+              for (final (heading, icons, description) in const [
                 (
                   'Write notes',
-                  'In Write mode, choose a voice and note length. Touch the '
+                  [Icons.edit, Icons.music_note, Icons.hotel],
+                  'The pencil button is Write mode; tap it to switch to Edit '
+                      '(the pointing hand). In Write mode, choose a voice and '
+                      'note length. Touch the '
                       'staff and drag up or down to choose a pitch; release '
-                      'to add it at the green cursor. Switch Note to Rest '
-                      'to enter rests.',
+                      'to add it at the green cursor. The note button switches '
+                      'to the bed icon to enter rests.',
                 ),
                 (
                   'Move around',
+                  [Icons.chevron_left, Icons.chevron_right],
                   'Drag the score with two fingers to scroll. Use the Bar '
                       'arrows to choose where to write.',
                 ),
                 (
                   'Edit',
+                  [Icons.touch_app, Icons.delete_outline, Icons.undo],
                   'Switch to Edit mode and tap a bar or a note in the active '
                       'voice. Drag a note vertically to change its pitch, '
                       'change its length, or use Delete. Undo is on the right; '
@@ -145,27 +151,52 @@ void _showGettingStarted(BuildContext context) {
                 ),
                 (
                   'Play',
+                  [Icons.play_arrow, Icons.skip_previous, Icons.speed],
                   'Play starts at the selected bar. Use Go to start beside '
                       'Play to return to the beginning. Tap BPM to set tempo.',
                 ),
                 (
                   'Score settings',
+                  [Icons.view_week_outlined],
                   'Tap the clefs or time signature to set the initial key '
                       'and meter. Tap the Bar label or a bar number for bar '
                       'settings and to add or edit bars.',
                 ),
                 (
                   'Save and back up',
+                  [Icons.menu],
                   'Use Menu > Save to save your project. Back up project saves '
                       'an editable copy outside the app; Restore project '
                       'backup opens it as a new project.',
                 ),
               ]) ...[
-                Text(
-                  heading,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    for (final icon in icons) ...[
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffe6f0eb),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          icon,
+                          size: 18,
+                          color: const Color(0xff244d45),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        heading,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(description),
                 const SizedBox(height: 12),
               ],
