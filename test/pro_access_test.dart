@@ -185,6 +185,14 @@ void main() {
     final canvas = find.byKey(const ValueKey('score-canvas'));
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Articulations'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.tap(find.byTooltip('Articulations'));
     await tester.pumpAndSettle();
 

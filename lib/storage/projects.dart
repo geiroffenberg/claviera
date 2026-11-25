@@ -33,12 +33,21 @@ class ProjectCodec {
           .any((event) => event.articulations.any((mark) => mark.isOrnament)),
     );
     final hasTies = Voice.values.any(
-      (voice) => project.editor.storedEventsFor(voice).any(
-        (event) => event.tieFromPrevious || event.tieToNext,
-      ),
+      (voice) => project.editor
+          .storedEventsFor(voice)
+          .any((event) => event.tieFromPrevious || event.tieToNext),
     );
+    final hasTuplets = Voice.values.any(
+      (voice) => project.editor
+          .storedEventsFor(voice)
+          .any((event) => event.tuplet != null),
+    );
+    // Version 10 and later always write the tie flags.
+    final writeTies = hasTies || hasTuplets;
     return jsonEncode({
-      'version': hasTies
+      'version': hasTuplets
+          ? 11
+          : hasTies
           ? 10
           : hasOrnaments
           ? 9
@@ -128,10 +137,16 @@ class ProjectCodec {
                 'duration': event.duration,
                 'voice': event.voice.name,
                 'staff': event.staff.name,
-                if (hasTies) ...{
+                if (writeTies) ...{
                   'tieFromPrevious': event.tieFromPrevious,
                   'tieToNext': event.tieToNext,
                 },
+                if (event.tuplet != null)
+                  'tuplet': {
+                    'actual': event.tuplet!.actual,
+                    'normal': event.tuplet!.normal,
+                    'group': event.tuplet!.groupId,
+                  },
                 if (event.articulations.isNotEmpty)
                   'articulations': [
                     for (final mark in Articulation.values)
@@ -171,7 +186,7 @@ class ProjectCodec {
     }
 
     final version = raw['version'];
-    if (version is! int || version < 1 || version > 10) {
+    if (version is! int || version < 1 || version > 11) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -356,16 +371,34 @@ class ProjectCodec {
       if (item is! Map<String, dynamic>) {
         throw const FormatException('Invalid event.');
       }
+      Tuplet? tuplet;
+      if (version >= 11 && item.containsKey('tuplet')) {
+        final rawTuplet = item['tuplet'];
+        if (rawTuplet is! Map<String, dynamic>) {
+          throw const FormatException('Invalid tuplet.');
+        }
+        final actual = number(rawTuplet, 'actual', 2, 16);
+        final normal = number(rawTuplet, 'normal', 1, 16);
+        if (actual == normal) throw const FormatException('Invalid tuplet.');
+        tuplet = Tuplet(
+          actual: actual,
+          normal: normal,
+          groupId: number(rawTuplet, 'group', 0, 100000),
+        );
+      }
       final start = number(item, 'start', 0, totalTicks - 1);
-      final duration = number(item, 'duration', 60, totalTicks - start);
-      if (start % 60 != 0 || duration % 60 != 0) {
+      final duration = number(
+        item,
+        'duration',
+        tuplet == null ? 60 : 1,
+        totalTicks - start,
+      );
+      if (tuplet == null && (start % 60 != 0 || duration % 60 != 0)) {
         throw const FormatException('Invalid event timing.');
       }
       final voice = enumValue(Voice.values, item['voice'], 'voice');
       final staff = enumValue(Staff.values, item['staff'], 'staff');
-      final tieFromPrevious = version >= 10
-          ? item['tieFromPrevious']
-          : false;
+      final tieFromPrevious = version >= 10 ? item['tieFromPrevious'] : false;
       final tieToNext = version >= 10 ? item['tieToNext'] : false;
       if (tieFromPrevious is! bool || tieToNext is! bool) {
         throw const FormatException('Invalid tie.');
@@ -422,6 +455,7 @@ class ProjectCodec {
           tieFromPrevious: tieFromPrevious,
           tieToNext: tieToNext,
           articulations: articulations,
+          tuplet: tuplet,
         ),
       );
     }

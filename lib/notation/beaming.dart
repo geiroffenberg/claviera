@@ -2,12 +2,12 @@ import '../models/score.dart';
 
 bool stemPointsUp(Voice voice) => voice == Voice.v1 || voice == Voice.v3;
 
-int baseDuration(int duration) {
-  return notationForDuration(duration)?.value.ticks ?? duration;
+int baseDuration(int duration, {Tuplet? tuplet}) {
+  return notationForDuration(duration, tuplet: tuplet)?.value.ticks ?? duration;
 }
 
-int beamCount(int duration) {
-  final base = baseDuration(duration);
+int beamCount(int duration, {Tuplet? tuplet}) {
+  final base = baseDuration(duration, tuplet: tuplet);
   if (base > NoteValue.eighth.ticks) return 0;
   if (base > NoteValue.sixteenth.ticks) return 1;
   if (base > NoteValue.thirtySecond.ticks) return 2;
@@ -44,7 +44,7 @@ List<List<NotationEvent>> beamGroups(
       final end = event.startTick + event.durationTicks;
       final eligible =
           !event.isRest &&
-          beamCount(event.durationTicks) > 0 &&
+          beamCount(event.durationTicks, tuplet: event.tuplet) > 0 &&
           event.startTick ~/ beat == (end - 1) ~/ beat;
       if (!eligible) {
         finish();
@@ -77,7 +77,9 @@ class BeamSpan {
 }
 
 List<BeamSpan> beamSpans(List<NotationEvent> group) {
-  final counts = group.map((event) => beamCount(event.durationTicks)).toList();
+  final counts = group
+      .map((event) => beamCount(event.durationTicks, tuplet: event.tuplet))
+      .toList();
   final spans = <BeamSpan>[];
   for (var level = 1; level <= 4; level++) {
     var i = 0;
@@ -103,4 +105,30 @@ List<BeamSpan> beamSpans(List<NotationEvent> group) {
     }
   }
   return spans;
+}
+
+/// Events of one tuplet in one voice. A bracket line is only needed when the
+/// events are not all joined by a single beam; the number is always drawn.
+class TupletSpan {
+  const TupletSpan(this.events, {required this.bracket});
+
+  final List<NotationEvent> events;
+  final bool bracket;
+  int get number => events.first.tuplet!.actual;
+}
+
+List<TupletSpan> tupletSpans(Measure measure, List<List<NotationEvent>> beams) {
+  final byKey = <(Voice, int), List<NotationEvent>>{};
+  for (final event in measure.events) {
+    final tuplet = event.tuplet;
+    if (tuplet == null) continue;
+    byKey.putIfAbsent((event.voice, tuplet.groupId), () => []).add(event);
+  }
+  return [
+    for (final events in byKey.values)
+      TupletSpan(
+        events..sort((a, b) => a.startTick.compareTo(b.startTick)),
+        bracket: !beams.any((beam) => events.every(beam.contains)),
+      ),
+  ];
 }

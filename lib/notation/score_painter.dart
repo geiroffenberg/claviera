@@ -451,7 +451,7 @@ class ScorePainter extends CustomPainter {
       for (final group in groups) {
         final up = stemPointsUp(group.first.voice);
         final highestLevel = group
-            .map((e) => beamCount(e.durationTicks))
+            .map((e) => beamCount(e.durationTicks, tuplet: e.tuplet))
             .reduce(math.max);
         final extension = (3.5 + .75 * (highestLevel - 1)) * _s;
         final pitches = group.expand(
@@ -548,6 +548,9 @@ class ScorePainter extends CustomPainter {
       }
       for (final group in groups) {
         _drawBeams(canvas, m, group, beamed[group.first]!);
+      }
+      for (final span in tupletSpans(score.measures[m], groups)) {
+        _drawTuplet(canvas, m, span, beamed);
       }
       for (final entry in score.measures[m].dynamics.entries) {
         final text = _dynamicText(entry.value, _s);
@@ -653,6 +656,73 @@ class ScorePainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
+  void _drawTuplet(
+    Canvas canvas,
+    int measure,
+    TupletSpan span,
+    Map<NotationEvent, double> beamed,
+  ) {
+    final events = span.events;
+    final up = stemPointsUp(events.first.voice);
+    final top = events.first.staff == Staff.treble ? _trebleTop : _bassTop;
+    // Clear every stem tip (or the staff, for rests) in the group.
+    final tips = [
+      for (final event in events)
+        beamed[event] ??
+            (event.isRest
+                ? (up ? top : top + 4 * _s)
+                : up
+                ? event.pitches
+                          .map((p) => _pitchY(p, event.staff))
+                          .reduce(math.min) -
+                      3.5 * _s
+                : event.pitches
+                          .map((p) => _pitchY(p, event.staff))
+                          .reduce(math.max) +
+                      3.5 * _s),
+    ];
+    final y = up
+        ? tips.reduce(math.min) - 1.4 * _s
+        : tips.reduce(math.max) + 1.4 * _s;
+    final left = eventXFor(score, measure, events.first.startTick, _s);
+    final right =
+        eventXFor(score, measure, events.last.startTick, _s) +
+        (events.last.isRest ? 1.6 : 1.4) * _s;
+    final middle = (left + right) / 2;
+    final digits = span.number.toString();
+    final numberWidth = (digits.length * 1.2 + .8) * _s;
+    if (span.bracket) {
+      final hook = (up ? 1 : -1) * .8 * _s;
+      final paint = Paint()
+        ..color = const Color(0xff252c2a)
+        ..strokeWidth = 1;
+      canvas.drawLine(Offset(left, y + hook), Offset(left, y), paint);
+      canvas.drawLine(
+        Offset(left, y),
+        Offset(middle - numberWidth / 2, y),
+        paint,
+      );
+      canvas.drawLine(
+        Offset(middle + numberWidth / 2, y),
+        Offset(right, y),
+        paint,
+      );
+      canvas.drawLine(Offset(right, y), Offset(right, y + hook), paint);
+    }
+    var x = middle - digits.length * 1.2 * _s / 2;
+    for (final digit in digits.codeUnits) {
+      _glyph(
+        canvas,
+        String.fromCharCode(0xE880 + digit - 0x30),
+        x,
+        y + .9 * _s,
+        color: const Color(0xff252c2a),
+        size: 3.2 * _s,
+      );
+      x += 1.2 * _s;
+    }
+  }
+
   void _drawBeams(
     Canvas canvas,
     int measure,
@@ -712,8 +782,8 @@ class ScorePainter extends CustomPainter {
         ? const Color(0xff1a8171)
         : const Color(0xff252c2a);
     final duration = event.durationTicks;
-    final base = baseDuration(duration);
-    final dots = notationForDuration(duration)?.dots ?? 0;
+    final base = baseDuration(duration, tuplet: event.tuplet);
+    final dots = notationForDuration(duration, tuplet: event.tuplet)?.dots ?? 0;
     if (event.isRest) {
       final glyph = switch (base) {
         >= 3840 => '\uE4E3',

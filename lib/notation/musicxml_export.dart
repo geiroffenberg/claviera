@@ -32,6 +32,8 @@ class MusicXmlExport {
       );
     }
 
+    final tupletEdges = <NotationEvent, String>{};
+
     void note(
       NotationEvent event,
       Pitch? pitch,
@@ -39,7 +41,7 @@ class MusicXmlExport {
       ArpeggioDirection? arpeggio,
     ) {
       final duration = event.durationTicks;
-      final notation = notationForDuration(duration);
+      final notation = notationForDuration(duration, tuplet: event.tuplet);
       if (notation == null) {
         throw StateError('Unsupported MusicXML note duration: $duration.');
       }
@@ -91,12 +93,24 @@ class MusicXmlExport {
               !event.tieFromPrevious) {
             text('accidental', pitch.accidental.name);
           }
+          final tuplet = event.tuplet;
+          if (tuplet != null) {
+            xml.element(
+              'time-modification',
+              nest: () {
+                text('actual-notes', tuplet.actual);
+                text('normal-notes', tuplet.normal);
+              },
+            );
+          }
           if (pitch != null && value != NoteValue.whole) {
             text('stem', stemPointsUp(event.voice) ? 'up' : 'down');
           }
           text('staff', event.staff == Staff.treble ? 1 : 2);
+          final tupletEdge = chord ? null : tupletEdges[event];
           if (event.tieFromPrevious ||
               event.tieToNext ||
+              tupletEdge != null ||
               (pitch != null && arpeggio != null) ||
               (pitch != null &&
                   event.articulations.any((mark) => mark.isOrnament)) ||
@@ -109,6 +123,12 @@ class MusicXmlExport {
                 }
                 if (event.tieToNext) {
                   xml.element('tied', attributes: {'type': 'start'});
+                }
+                if (tupletEdge != null) {
+                  xml.element(
+                    'tuplet',
+                    attributes: {'type': tupletEdge, 'number': '1'},
+                  );
                 }
                 if (!chord &&
                     event.articulations.contains(Articulation.fermata)) {
@@ -331,6 +351,11 @@ class MusicXmlExport {
                         text('staff', 1);
                       },
                     );
+                  }
+                  tupletEdges.clear();
+                  for (final span in tupletSpans(measure, const [])) {
+                    tupletEdges[span.events.first] = 'start';
+                    tupletEdges[span.events.last] = 'stop';
                   }
                   final voices = Voice.values.where(
                     (voice) =>

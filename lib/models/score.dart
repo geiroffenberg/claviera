@@ -133,7 +133,55 @@ enum NoteValue {
   }
 }
 
-({NoteValue value, int dots})? notationForDuration(int duration) {
+/// `actual` notes are played in the time of `normal` (3:2 triplet, 5:4
+/// quintuplet). Events of one tuplet share a [groupId], unique per score.
+class Tuplet {
+  const Tuplet({required this.actual, required this.normal, this.groupId = 0})
+    : assert(actual > 1),
+      assert(normal >= 1),
+      assert(actual != normal);
+
+  const Tuplet.triplet({int groupId = 0})
+    : this(actual: 3, normal: 2, groupId: groupId);
+  const Tuplet.quintuplet({int groupId = 0})
+    : this(actual: 5, normal: 4, groupId: groupId);
+
+  final int actual;
+  final int normal;
+  final int groupId;
+
+  /// Sounding ticks of a note whose written length is [writtenTicks], or null
+  /// if the result is not a whole number of ticks.
+  int? scale(int writtenTicks) {
+    final scaled = writtenTicks * normal;
+    return scaled % actual == 0 ? scaled ~/ actual : null;
+  }
+
+  /// Written length for a sounding length, or null if it does not divide.
+  int? unscale(int soundingTicks) {
+    final written = soundingTicks * actual;
+    return written % normal == 0 ? written ~/ normal : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is Tuplet &&
+      other.actual == actual &&
+      other.normal == normal &&
+      other.groupId == groupId;
+  @override
+  int get hashCode => Object.hash(actual, normal, groupId);
+}
+
+({NoteValue value, int dots})? notationForDuration(
+  int duration, {
+  Tuplet? tuplet,
+}) {
+  if (tuplet != null) {
+    final written = tuplet.unscale(duration);
+    if (written == null) return null;
+    duration = written;
+  }
   for (final value in NoteValue.values) {
     for (var dots = 0; dots <= value.maxDots; dots++) {
       if (value.duration(dots: dots) == duration) {
@@ -169,6 +217,7 @@ class NotationEvent {
     this.tieFromPrevious = false,
     this.tieToNext = false,
     this.articulations = const {},
+    this.tuplet,
   }) : assert(startTick >= 0),
        assert(durationTicks > 0);
 
@@ -181,6 +230,9 @@ class NotationEvent {
   final bool tieFromPrevious;
   final bool tieToNext;
   final Set<Articulation> articulations;
+
+  /// [durationTicks] is already the sounding length; this only affects notation.
+  final Tuplet? tuplet;
 
   bool get isRest => pitches.isEmpty;
 }

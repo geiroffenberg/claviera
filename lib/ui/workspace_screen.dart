@@ -1269,7 +1269,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
     replaceSelectedRest = event?.isRest ?? false;
     if (event != null) {
-      final notation = notationForDuration(event.duration);
+      final notation = notationForDuration(
+        event.duration,
+        tuplet: event.tuplet,
+      );
       if (notation != null) {
         noteValue = notation.value;
         dots = notation.dots;
@@ -1928,8 +1931,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           tieToPrevious: tieArmed,
         );
         tieArmed = false;
-        replaceSelectedRest = false;
         pitchIndex = 0;
+        _advanceInTuplet();
+      } else if (rest &&
+          replaceSelectedRest &&
+          selected != null &&
+          selected!.isRest &&
+          selected!.tuplet != null) {
+        // The slot already is a rest; just move on to the next one.
+        _advanceInTuplet();
       } else {
         selectedId = editor.append(
           voice: voice,
@@ -1946,6 +1956,33 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         replaceSelectedRest = false;
         pitchIndex = 0;
       }
+    });
+  }
+
+  /// After filling a tuplet slot, select the next empty slot of the group.
+  void _advanceInTuplet() {
+    final next = editor.nextInTuplet(selectedId!);
+    replaceSelectedRest = next != null && next.isRest;
+    if (replaceSelectedRest) selectedId = next!.id;
+  }
+
+  void _insertTuplet(Tuplet tuplet) {
+    _perform(() {
+      if (dots > 0) {
+        throw const EditException('Tuplets cannot use dotted notes.');
+      }
+      selectedId = editor.insertTuplet(
+        voice: voice,
+        staff: Staff.treble,
+        tuplet: tuplet,
+        value: noteValue,
+        measure: selectedMeasure,
+      );
+      selectedMeasure = editor.measureAtTick(selected!.start);
+      replaceSelectedRest = true;
+      rest = false;
+      tieArmed = false;
+      pitchIndex = 0;
     });
   }
 
@@ -2120,6 +2157,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               2 => 'Two dots',
                               _ => 'No dots',
                             },
+                          ),
+                          _textButton(
+                            '3',
+                            'Triplet',
+                            mode == WorkspaceMode.write
+                                ? () => _insertTuplet(const Tuplet.triplet())
+                                : null,
+                            selected: selected?.tuplet?.actual == 3,
+                          ),
+                          _textButton(
+                            '5',
+                            'Quintuplet',
+                            mode == WorkspaceMode.write
+                                ? () => _insertTuplet(const Tuplet.quintuplet())
+                                : null,
+                            selected: selected?.tuplet?.actual == 5,
                           ),
                           _button(
                             mode == WorkspaceMode.write

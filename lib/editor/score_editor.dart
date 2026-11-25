@@ -22,6 +22,7 @@ class VoiceEvent {
     Set<Articulation> articulations = const {},
     this.tieFromPrevious = false,
     this.tieToNext = false,
+    this.tuplet,
   }) : pitches = List.unmodifiable(pitches),
        articulations = Set.unmodifiable(articulations);
 
@@ -35,6 +36,7 @@ class VoiceEvent {
   final Set<Articulation> articulations;
   final bool tieFromPrevious;
   final bool tieToNext;
+  final Tuplet? tuplet;
   bool get isRest => pitches.isEmpty;
   int get end => start + duration;
 
@@ -58,6 +60,7 @@ class VoiceEvent {
     articulations: articulations ?? this.articulations,
     tieFromPrevious: tieFromPrevious ?? this.tieFromPrevious,
     tieToNext: tieToNext ?? this.tieToNext,
+    tuplet: tuplet,
   );
 }
 
@@ -190,6 +193,7 @@ class ScoreEditor {
             articulations: event.articulations,
             tieFromPrevious: event.tieFromPrevious,
             tieToNext: event.tieToNext,
+            tuplet: event.tuplet,
           ),
         );
       }
@@ -208,6 +212,7 @@ class ScoreEditor {
     _normalizeRests();
     try {
       _validateTies();
+      _validateTuplets();
       _resolvedEvents();
     } on EditException catch (error) {
       throw ArgumentError(error.message);
@@ -526,6 +531,7 @@ class ScoreEditor {
       change();
       _normalizeRests();
       _validateTies();
+      _validateTuplets();
       _arpeggios.removeWhere((tick, _) => pitchCountAt(tick) < 2);
       _resolvedEvents();
     } on EditException {
@@ -581,6 +587,9 @@ class ScoreEditor {
   void setArpeggio(int tick, ArpeggioDirection? direction) {
     if (direction != null && pitchCountAt(tick) < 2) {
       throw const EditException('Select at least two simultaneous notes.');
+    }
+    if (direction != null && tick % 60 != 0) {
+      throw const EditException('Arpeggios are not supported on tuplet notes.');
     }
     if (_arpeggios[tick] == direction) return;
     _commit(() {
@@ -844,6 +853,7 @@ class ScoreEditor {
             staff: event.staff,
             pitches: event.pitches,
             articulations: event.articulations,
+            tuplet: event.tuplet,
           ),
       ];
       _dynamics = {
@@ -1104,7 +1114,7 @@ class ScoreEditor {
     }
     // Explicit rests can also span bars or need multiple notation values.
     final explicit = _events
-        .where((e) => e.isRest && !e.generatedRest)
+        .where((e) => e.isRest && !e.generatedRest && e.tuplet == null)
         .toList();
     for (final rest in explicit) {
       _events.remove(rest);
@@ -1256,6 +1266,80 @@ class ScoreEditor {
     }
   }
 
+  void _validateTuplets() {
+    for (final event in _events) {
+      if (event.tuplet != null &&
+          measureAtTick(event.start) != measureAtTick(event.end - 1)) {
+        throw const EditException('A tuplet cannot cross a bar line.');
+      }
+    }
+  }
+
+  /// Writes a tuplet as placeholder rests (one per slot) to be replaced by
+  /// notes. [value] is the written length of each slot: a triplet of eighths
+  /// fills the time of two eighths. Returns the id of the first slot.
+  int insertTuplet({
+    required Voice voice,
+    required Staff staff,
+    required Tuplet tuplet,
+    required NoteValue value,
+    int? measure,
+  }) {
+    final slot = tuplet.scale(value.ticks);
+    if (slot == null) {
+      throw const EditException('That tuplet does not fit this note value.');
+    }
+    var firstId = 0;
+    _commit(() {
+      final start = nextTick(voice, measure: measure);
+      final end = start + slot * tuplet.actual;
+      if (end > measureStart(_measureCount) ||
+          measureAtTick(start) != measureAtTick(end - 1)) {
+        throw const EditException('The tuplet does not fit in this bar.');
+      }
+      if (storedEventsFor(voice).any((e) => e.start < end && e.end > start)) {
+        throw const EditException(
+          'The tuplet would overlap an existing event.',
+        );
+      }
+      final groupId =
+          _events.fold<int>(
+            0,
+            (top, e) => math.max(top, e.tuplet?.groupId ?? 0),
+          ) +
+          1;
+      final grouped = Tuplet(
+        actual: tuplet.actual,
+        normal: tuplet.normal,
+        groupId: groupId,
+      );
+      for (var i = 0; i < tuplet.actual; i++) {
+        final id = _nextId++;
+        if (i == 0) firstId = id;
+        _events.add(
+          VoiceEvent(
+            id: id,
+            start: start + i * slot,
+            duration: slot,
+            voice: voice,
+            staff: staff,
+            tuplet: grouped,
+          ),
+        );
+      }
+    });
+    return firstId;
+  }
+
+  /// The slot after [id] in the same tuplet, or null at the end of the group.
+  VoiceEvent? nextInTuplet(int id) {
+    final event = _storedEventById(id);
+    final tuplet = event?.tuplet;
+    if (event == null || tuplet == null) return null;
+    final next = _nextEvent(event);
+    return next?.tuplet?.groupId == tuplet.groupId ? next : null;
+  }
+
   VoiceEvent _removeTieLinks(VoiceEvent event) {
     if (!event.tieFromPrevious && !event.tieToNext) return event;
     if (event.tieFromPrevious) {
@@ -1270,10 +1354,7 @@ class ScoreEditor {
         _replace(next, next.copyWith(tieFromPrevious: false));
       }
     }
-    final untied = event.copyWith(
-      tieFromPrevious: false,
-      tieToNext: false,
-    );
+    final untied = event.copyWith(tieFromPrevious: false, tieToNext: false);
     if (event.tieFromPrevious || event.tieToNext) _replace(event, untied);
     return untied;
   }
@@ -1347,7 +1428,10 @@ class ScoreEditor {
     if (rest == null || !rest.isRest) {
       throw const EditException('Select a rest first.');
     }
-    if (duration <= 0 || duration % 60 != 0) {
+    if (rest.tuplet != null) {
+      // A tuplet slot is always filled completely.
+      duration = rest.duration;
+    } else if (duration <= 0 || duration % 60 != 0) {
       throw const EditException('Unsupported duration.');
     }
     if (duration > rest.duration) {
@@ -1470,12 +1554,20 @@ class ScoreEditor {
   void resize(int id, int duration) {
     final event = _storedEventById(id);
     if (event == null) throw const EditException('Select an event first.');
+    if (event.tuplet != null) {
+      throw const EditException('Tuplet notes cannot be resized.');
+    }
     if (duration <= 0 || duration % 60 != 0) {
       throw const EditException('Unsupported duration.');
     }
     if (duration == event.duration) return;
     final events = storedEventsFor(event.voice);
     final following = events.skipWhile((e) => e.id != id).skip(1).toList();
+    if (following.any(
+      (e) => e.tuplet != null && e.start < event.start + duration,
+    )) {
+      throw const EditException('The duration would overlap a tuplet.');
+    }
     final nextNote = following.where((e) => !e.isRest).firstOrNull;
     final newEnd = event.start + duration;
     if (newEnd > measureStart(_measureCount)) {
@@ -1519,6 +1611,24 @@ class ScoreEditor {
   void delete(int id, {int? pitchIndex}) {
     final event = _storedEventById(id);
     if (event == null) throw const EditException('Select an event first.');
+    final tuplet = event.tuplet;
+    if (tuplet != null && event.isRest) {
+      final group = _events
+          .where(
+            (e) =>
+                e.voice == event.voice &&
+                e.tuplet?.groupId == tuplet.groupId &&
+                measureAtTick(e.start) == measureAtTick(event.start),
+          )
+          .toList();
+      if (group.any((e) => !e.isRest)) {
+        throw const EditException(
+          'Delete the notes of the tuplet first, then delete a rest to remove it.',
+        );
+      }
+      _commit(() => _events.removeWhere(group.contains));
+      return;
+    }
     final barEnd = measureStart(measureAtTick(event.start) + 1);
     if (event.isRest &&
         storedEventsFor(
@@ -1533,15 +1643,14 @@ class ScoreEditor {
       if (event.isRest) {
         _events.remove(editable);
       } else if (pitchIndex != null && event.pitches.length > 1) {
-        final pitches = List<Pitch>.of(editable.pitches)
-          ..removeAt(pitchIndex);
+        final pitches = List<Pitch>.of(editable.pitches)..removeAt(pitchIndex);
         _replace(editable, editable.copyWith(pitches: pitches));
       } else {
         _replace(
           editable,
           editable.copyWith(
             pitches: [],
-            generatedRest: true,
+            generatedRest: tuplet == null,
             articulations: {},
           ),
         );
@@ -1561,7 +1670,9 @@ class ScoreEditor {
           remaining,
           measureStart(measure + 1) - position,
         );
-        final part = values.firstWhere((value) => value <= available);
+        final part = event.tuplet != null
+            ? available
+            : values.firstWhere((value) => value <= available);
         measures[measure].add(
           NotationEvent(
             startTick: position - measureStart(measure),
@@ -1570,14 +1681,14 @@ class ScoreEditor {
             staff: event.staff,
             pitches: event.pitches,
             eventId: event.id,
+            tuplet: event.tuplet,
             tieFromPrevious:
                 !event.isRest &&
                 (position > event.start ||
                     (position == event.start && event.tieFromPrevious)),
             tieToNext:
                 !event.isRest &&
-                (remaining > part ||
-                    (remaining == part && event.tieToNext)),
+                (remaining > part || (remaining == part && event.tieToNext)),
             articulations: {
               if (position == event.start)
                 ...event.articulations.where(
