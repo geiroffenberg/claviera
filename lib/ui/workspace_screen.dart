@@ -2182,11 +2182,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               _ => 'Off',
                             },
                           ),
-                          _button(
+                          _glyphButton(
                             mode == WorkspaceMode.write
                                 ? 'Tie next note'
                                 : 'Tie to previous note',
-                            Icons.link,
+                            const _TieIcon(),
                             mode == WorkspaceMode.edit
                                 ? event == null || event.isRest
                                       ? null
@@ -2213,9 +2213,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                   : null,
                             ),
                           const Divider(),
-                          _button(
+                          _glyphButton(
                             'Chord stack',
-                            Icons.library_add,
+                            const _ChordStackIcon(),
                             () => setState(() {
                               chordStack = !chordStack;
                               tieArmed = false;
@@ -2530,6 +2530,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     IconData icon,
     VoidCallback? onPressed, {
     bool selected = false,
+  }) => _glyphButton(label, Icon(icon), onPressed, selected: selected);
+
+  Widget _glyphButton(
+    String label,
+    Widget icon,
+    VoidCallback? onPressed, {
+    bool selected = false,
   }) => Tooltip(
     message: label,
     child: IconButton(
@@ -2540,7 +2547,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       style: IconButton.styleFrom(
         backgroundColor: selected ? const Color(0xffc7dfd5) : null,
       ),
-      icon: Icon(icon),
+      icon: icon,
     ),
   );
 
@@ -2607,4 +2614,76 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       music: true,
     );
   }
+}
+
+class _TieIcon extends StatelessWidget {
+  const _TieIcon();
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: const Size(26, 24),
+    painter: _TiePainter(IconTheme.of(context).color ?? Colors.black),
+  );
+}
+
+class _TiePainter extends CustomPainter {
+  const _TiePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final y = size.height * 0.4;
+    final head = Paint()..color = color;
+    canvas.drawOval(Rect.fromLTWH(0, y, 7, 5.5), head);
+    canvas.drawOval(Rect.fromLTWH(w - 7, y, 7, 5.5), head);
+    final arc = Path()
+      ..moveTo(3.5, y + 8)
+      ..quadraticBezierTo(w / 2, y + 18, w - 3.5, y + 8)
+      ..quadraticBezierTo(w / 2, y + 14, 3.5, y + 8);
+    canvas.drawPath(arc, head);
+  }
+
+  @override
+  bool shouldRepaint(_TiePainter old) => old.color != color;
+}
+
+class _ChordStackIcon extends StatelessWidget {
+  const _ChordStackIcon();
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: const Size(24, 24),
+    painter: _StackPainter(IconTheme.of(context).color ?? Colors.black),
+  );
+}
+
+class _StackPainter extends CustomPainter {
+  const _StackPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final stem = Paint()
+      ..color = color
+      ..strokeWidth = 1.6;
+    const heads = [Offset(8, 18), Offset(8, 12), Offset(8, 6)];
+    for (final c in heads) {
+      canvas.save();
+      canvas.translate(c.dx, c.dy);
+      canvas.rotate(-0.35);
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset.zero, width: 10, height: 6.5),
+        paint,
+      );
+      canvas.restore();
+    }
+    canvas.drawLine(const Offset(12.6, 17), const Offset(12.6, 1), stem);
+  }
+
+  @override
+  bool shouldRepaint(_StackPainter old) => old.color != color;
 }
