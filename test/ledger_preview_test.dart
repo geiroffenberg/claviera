@@ -177,6 +177,14 @@ void main() {
     );
     await tester.tapAt(origin + const Offset(160, 115));
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Chord stack'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.tap(find.byTooltip('Chord stack'));
     await tester.pump();
     final gesture = await tester.startGesture(origin + const Offset(160, 115));

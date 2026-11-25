@@ -587,6 +587,14 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Edit mode'));
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Chord stack'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.tap(find.byTooltip('Chord stack'));
     await tester.pump();
     await tester.tapAt(origin + const Offset(160, 105));

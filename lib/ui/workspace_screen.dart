@@ -2198,6 +2198,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                 ? tieArmed
                                 : event?.tieFromPrevious ?? false,
                           ),
+                          for (final item in [
+                            (Accidental.sharp, '♯'),
+                            (Accidental.flat, '♭'),
+                            (Accidental.natural, '♮'),
+                          ])
+                            _textButton(
+                              item.$2,
+                              '${item.$2} accidental',
+                              mode == WorkspaceMode.edit &&
+                                      event != null &&
+                                      !event.isRest
+                                  ? () => _accidental(item.$1)
+                                  : null,
+                            ),
                           const Divider(),
                           _button(
                             'Chord stack',
@@ -2429,21 +2443,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                 ? null
                                 : () => setState(() => pitchIndex = below),
                           ),
-                          const Divider(),
-                          for (final item in [
-                            (Accidental.sharp, '♯'),
-                            (Accidental.flat, '♭'),
-                            (Accidental.natural, '♮'),
-                          ])
-                            _textButton(
-                              item.$2,
-                              '${item.$2} accidental',
-                              mode == WorkspaceMode.edit &&
-                                      event != null &&
-                                      !event.isRest
-                                  ? () => _accidental(item.$1)
-                                  : null,
-                            ),
                           _button(
                             'Undo',
                             Icons.undo,

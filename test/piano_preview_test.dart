@@ -174,7 +174,7 @@ void main() {
         find.byTooltip('♯ accidental'),
         200,
         scrollable: find.descendant(
-          of: find.byType(ListView).last,
+          of: find.byType(ListView).first,
           matching: find.byType(Scrollable),
         ),
       );
@@ -229,12 +229,20 @@ void main() {
       find.byTooltip('♯ accidental'),
       200,
       scrollable: find.descendant(
-        of: find.byType(ListView).last,
+        of: find.byType(ListView).first,
         matching: find.byType(Scrollable),
       ),
     );
     await tester.tap(find.byTooltip('♯ accidental'));
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Edit mode'),
+      -200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.tap(find.byTooltip('Edit mode'));
     await tester.pump();
     final gesture = await tester.startGesture(origin + const Offset(160, 115));
