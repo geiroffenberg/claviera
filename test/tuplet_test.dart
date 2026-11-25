@@ -263,9 +263,9 @@ void main() {
         tester.widget<ScoreViewport>(find.byType(ScoreViewport)).score;
     await tester.tap(find.byTooltip('eighth note'));
     await tester.pump();
-    await tester.tap(find.byTooltip('Triplet'));
+    await tester.tap(find.byTooltip('Tuplet'));
     await tester.pump();
-    expect(score().measures.first.events, hasLength(3));
+    expect(score().measures.first.events, isEmpty);
     final canvas = find.byKey(const ValueKey('score-canvas'));
     for (var i = 0; i < 3; i++) {
       await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));

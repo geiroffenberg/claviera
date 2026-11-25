@@ -55,6 +55,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool rest = false;
   bool tieArmed = false;
   int dots = 0;
+  int tupletSize = 0;
   bool chordStack = false;
   int? selectedId;
   int selectedMeasure = 0;
@@ -1908,6 +1909,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
           'Tie mode applies to single note entry, not rests or chord stacking.',
         );
       }
+      if (tupletSize > 0 &&
+          !chordStack &&
+          !(replaceSelectedRest && selected?.tuplet != null)) {
+        _startTuplet(staff);
+      }
       if (chordStack) {
         if (rest) {
           throw const EditException('Turn off Rest to add a chord pitch.');
@@ -1966,24 +1972,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     if (replaceSelectedRest) selectedId = next!.id;
   }
 
-  void _insertTuplet(Tuplet tuplet) {
-    _perform(() {
-      if (dots > 0) {
-        throw const EditException('Tuplets cannot use dotted notes.');
-      }
-      selectedId = editor.insertTuplet(
-        voice: voice,
-        staff: Staff.treble,
-        tuplet: tuplet,
-        value: noteValue,
-        measure: selectedMeasure,
-      );
-      selectedMeasure = editor.measureAtTick(selected!.start);
-      replaceSelectedRest = true;
-      rest = false;
-      tieArmed = false;
-      pitchIndex = 0;
-    });
+  void _startTuplet(Staff staff) {
+    if (dots > 0) {
+      throw const EditException('Tuplets cannot use dotted notes.');
+    }
+    selectedId = editor.insertTuplet(
+      voice: voice,
+      staff: staff,
+      tuplet: tupletSize == 5
+          ? const Tuplet.quintuplet()
+          : const Tuplet.triplet(),
+      value: noteValue,
+      measure: selectedMeasure,
+    );
+    selectedMeasure = editor.measureAtTick(selected!.start);
+    replaceSelectedRest = true;
+    tieArmed = false;
+    pitchIndex = 0;
   }
 
   void _changeDuration(NoteValue value, int dotCount) {
@@ -2159,20 +2164,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             },
                           ),
                           _textButton(
-                            '3',
-                            'Triplet',
+                            tupletSize == 0 ? '3' : '$tupletSize',
+                            'Tuplet',
                             mode == WorkspaceMode.write
-                                ? () => _insertTuplet(const Tuplet.triplet())
+                                ? () => setState(
+                                    () => tupletSize = switch (tupletSize) {
+                                      0 => 3,
+                                      3 => 5,
+                                      _ => 0,
+                                    },
+                                  )
                                 : null,
-                            selected: selected?.tuplet?.actual == 3,
-                          ),
-                          _textButton(
-                            '5',
-                            'Quintuplet',
-                            mode == WorkspaceMode.write
-                                ? () => _insertTuplet(const Tuplet.quintuplet())
-                                : null,
-                            selected: selected?.tuplet?.actual == 5,
+                            selected: tupletSize > 0,
+                            semanticValue: switch (tupletSize) {
+                              3 => 'Triplet',
+                              5 => 'Quintuplet',
+                              _ => 'Off',
+                            },
                           ),
                           _button(
                             mode == WorkspaceMode.write
