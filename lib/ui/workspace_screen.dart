@@ -1029,6 +1029,76 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     _perform(() => editor.swapVoices(measure, pair.$1, pair.$2));
   }
 
+  Future<void> _transposeScore() async {
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          void move(int semitones) {
+            try {
+              setState(() => editor.transposeScore(semitones));
+              _queueRecovery();
+              update(() => error = null);
+            } on EditException catch (exception) {
+              update(() => error = exception.message);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Transpose score'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (label, semitones) in const [
+                        ('+1', 1),
+                        ('-1', -1),
+                        ('+12', 12),
+                        ('-12', -12),
+                      ])
+                        OutlinedButton(
+                          onPressed: () => move(semitones),
+                          child: Text(label),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Moves all voices in all bars by semitones and changes '
+                    'the key signatures to match, for example C major +1 '
+                    'becomes D♭ major. ±12 is one octave.',
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _voiceTranspose(int measure) async {
     final target = voice;
     String? error;
@@ -2633,6 +2703,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                     }
                                   })
                                 : null,
+                          ),
+                          _glyphButton(
+                            'Transpose score',
+                            const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.music_note, size: 14),
+                                Icon(Icons.swap_vert, size: 14),
+                              ],
+                            ),
+                            _transposeScore,
                           ),
                           _button(
                             'Menu',

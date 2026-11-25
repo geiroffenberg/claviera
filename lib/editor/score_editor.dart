@@ -788,18 +788,24 @@ class ScoreEditor {
       for (final event in moving) {
         _replace(event, moved[event.id]!);
       }
-      // A carried accidental earlier in the bar can change an unmarked note;
-      // mark such notes explicitly so they keep their sound.
-      final order = moving.map((e) => e.id).toList()
-        ..sort((a, b) => moved[a]!.start.compareTo(moved[b]!.start));
-      for (final id in order) {
-        _resolvedCache = null;
-        final actual = _resolvedEvents().firstWhere((e) => e.id == id);
-        final current = _events.firstWhere((e) => e.id == id);
+      _pinSounds(desired);
+    });
+  }
+
+  /// A carried accidental can change an unmarked note; mark such notes
+  /// explicitly so every event in [desired] keeps its sounding pitches.
+  void _pinSounds(Map<int, List<int>> desired) {
+    for (var pass = 0; pass < 8; pass++) {
+      _resolvedCache = null;
+      final resolved = {for (final e in _resolvedEvents()) e.id: e};
+      var changed = false;
+      for (final entry in desired.entries) {
+        final actual = resolved[entry.key]!;
+        final current = _events.firstWhere((e) => e.id == entry.key);
         final fixed = [...current.pitches];
-        var changed = false;
+        var touched = false;
         for (var i = 0; i < fixed.length; i++) {
-          final want = desired[id]![i];
+          final want = entry.value[i];
           if (actual.pitches[i].midiNote == want) continue;
           final alteration =
               want - soundingMidi(fixed[i].diatonicStep, Accidental.natural, 0);
@@ -812,10 +818,106 @@ class ScoreEditor {
               _ => Accidental.natural,
             },
           );
+          touched = true;
+        }
+        if (touched) {
+          _replace(current, current.copyWith(pitches: fixed));
           changed = true;
         }
-        if (changed) _replace(current, current.copyWith(pitches: fixed));
       }
+      if (!changed) return;
+    }
+    throw const EditException('The accidentals could not be preserved.');
+  }
+
+  /// Transposes every note and the key signatures by [semitones], spelling
+  /// the notes for the new key (C major up one semitone gives D♭ major).
+  void transposeScore(int semitones) {
+    if (semitones == 0) return;
+    final keys = [_key, ..._keys.values];
+    final base = ((7 * semitones) % 12 + 12) % 12;
+    int? fifths;
+    for (final candidate in [base - 12, base, base + 12]) {
+      if (keys.any((k) => (k + candidate).abs() > 7)) continue;
+      final better =
+          fifths == null || (_key + candidate).abs() < (_key + fifths).abs();
+      if (better) fifths = candidate;
+    }
+    if (fifths == null) {
+      throw const EditException(
+        'The key signatures would need more than seven sharps or flats.',
+      );
+    }
+    const major = [0, 2, 4, 5, 7, 9, 11];
+    int semis(int steps) => 12 * ((steps - steps % 7) ~/ 7) + major[steps % 7];
+    final base7 = (4 * fifths) % 7;
+    var shift = base7;
+    for (var k = -20; k <= 20; k++) {
+      final steps = base7 + 7 * k;
+      if ((semis(steps) - semitones).abs() < (semis(shift) - semitones).abs()) {
+        shift = steps;
+      }
+    }
+    final resolved = {for (final e in _resolvedEvents()) e.id: e};
+    final newKeys = {for (final e in _keys.entries) e.key: e.value + fifths};
+    final newKey = _key + fifths;
+    int keyFor(int measure) {
+      var key = newKey;
+      for (var i = 0; i <= measure; i++) {
+        key = newKeys[i] ?? key;
+      }
+      return key;
+    }
+
+    final desired = <int, List<int>>{};
+    final moved = <VoiceEvent, VoiceEvent>{};
+    for (final event in _events) {
+      if (event.generatedRest || event.isRest) continue;
+      final pitches = <Pitch>[];
+      final sounding = <int>[];
+      final key = keyFor(measureAtTick(event.start));
+      for (var i = 0; i < event.pitches.length; i++) {
+        final midi = resolved[event.id]!.pitches[i].midiNote + semitones;
+        if (midi < 21 || midi > 108) {
+          throw const EditException(
+            'The notes would go outside the piano range.',
+          );
+        }
+        final target = event.pitches[i].diatonicStep + shift;
+        Pitch? pitch;
+        for (final step in [target, target + 1, target - 1]) {
+          if (step < 0) continue;
+          final alteration = midi - soundingMidi(step, Accidental.natural, 0);
+          if (alteration.abs() > 1) continue;
+          pitch = Pitch(
+            diatonicStep: step,
+            midiNote: midi,
+            accidental: alteration == keyAlteration(key, step)
+                ? Accidental.none
+                : switch (alteration) {
+                    -1 => Accidental.flat,
+                    1 => Accidental.sharp,
+                    _ => Accidental.natural,
+                  },
+          );
+          break;
+        }
+        if (pitch == null) {
+          throw const EditException('A note could not be respelled.');
+        }
+        pitches.add(pitch);
+        sounding.add(midi);
+      }
+      desired[event.id] = sounding;
+      moved[event] = event.copyWith(pitches: pitches);
+    }
+    _commit(() {
+      _key = newKey;
+      _keys = newKeys;
+      for (final entry in moved.entries) {
+        _replace(entry.key, entry.value);
+      }
+      _pinSounds(desired);
     });
   }
 

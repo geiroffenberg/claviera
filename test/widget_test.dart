@@ -83,6 +83,8 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
+    await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Getting started'));
@@ -629,6 +631,8 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
+    await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Redo'));

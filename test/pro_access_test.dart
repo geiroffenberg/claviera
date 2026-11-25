@@ -146,6 +146,8 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
+    await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Upgrade to Pro'));
@@ -289,6 +291,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: WorkspaceScreen(proPurchaseController: purchases)),
     );
+    await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Upgrade to Pro'), findsOneWidget);
@@ -318,7 +322,9 @@ void main() {
       await tester.tap(find.text('Not now'));
       await tester.pumpAndSettle();
       if (export != 'Export MusicXML') {
-        await tester.tap(find.byTooltip('Menu'));
+        await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Menu'));
         await tester.pumpAndSettle();
       }
     }

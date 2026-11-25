@@ -121,4 +121,51 @@ void main() {
       expect(e.score.measures[0].events.first.pitches.single.midiNote, 68);
     });
   });
+
+  group('transpose score', () {
+    Pitch only(ScoreEditor e, int measure) =>
+        e.score.measures[measure].events.first.pitches.single;
+
+    test('C major up one semitone becomes D flat major', () {
+      final e = editor();
+      e.transposeScore(1);
+      expect(e.score.keySignature, -5);
+      expect(midi(e, Voice.v1, 0), [68]);
+      expect(midi(e, Voice.v2, 0), [61]);
+      expect(midi(e, Voice.v1, 1), [68]);
+      // G becomes A flat and C becomes D flat, both from the key signature.
+      expect(only(e, 0).diatonicStep, 33);
+      expect(only(e, 0).accidental, Accidental.none);
+      e.undo();
+      expect(e.score.keySignature, 0);
+      expect(midi(e, Voice.v1, 0), [67]);
+    });
+
+    test('octaves keep the key and chromatic notes are respelled', () {
+      final e = ScoreEditor(blankScore);
+      e.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: const Pitch(
+          diatonicStep: 31,
+          midiNote: 66,
+          accidental: Accidental.sharp,
+        ),
+        measure: 0,
+      );
+      e.transposeScore(12);
+      expect(e.score.keySignature, 0);
+      expect(only(e, 0).midiNote, 78);
+      expect(only(e, 0).accidental, Accidental.sharp);
+      e.transposeScore(-1);
+      expect(e.score.keySignature, 5);
+      expect(only(e, 0).midiNote, 77);
+      // F sharp in C is the raised fourth, so B major spells it E sharp.
+      expect(only(e, 0).diatonicStep % 7, 2);
+      expect(only(e, 0).accidental, Accidental.sharp);
+      expect(() => e.transposeScore(40), throwsA(isA<EditException>()));
+      expect(only(e, 0).midiNote, 77);
+    });
+  });
 }
