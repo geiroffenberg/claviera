@@ -950,6 +950,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                 onPressed: () => Navigator.pop(context, 'repeats'),
               ),
               OutlinedButton.icon(
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('Voice switch'),
+                onPressed: () => Navigator.pop(context, 'voiceSwitch'),
+              ),
+              OutlinedButton.icon(
                 icon: const Icon(Icons.notes),
                 label: const Text('Bar note'),
                 onPressed: () => Navigator.pop(context, 'note'),
@@ -977,11 +982,44 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       await _scoreSettings(measure: measure == 0 ? null : measure);
     } else if (choice == 'repeats') {
       await _setBarRepeats(measure);
+    } else if (choice == 'voiceSwitch') {
+      await _voiceSwitch(measure);
     } else if (choice == 'note') {
       await _setBarNote(measure);
     } else if (choice == 'edit') {
       await _editBars(measure);
     }
+  }
+
+  Future<void> _voiceSwitch(int measure) async {
+    final pair = await showDialog<(Voice, Voice)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Bar ${measure + 1} voice switch'),
+        content: SingleChildScrollView(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final a in Voice.values)
+                for (final b in Voice.values.where((b) => b.index > a.index))
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context, (a, b)),
+                    child: Text('V${a.index + 1} ⇄ V${b.index + 1}'),
+                  ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (pair == null || !mounted) return;
+    _perform(() => editor.swapVoices(measure, pair.$1, pair.$2));
   }
 
   Future<void> _setBarNote(int measure) async {

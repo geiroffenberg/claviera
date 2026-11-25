@@ -41,6 +41,7 @@ class VoiceEvent {
   int get end => start + duration;
 
   VoiceEvent copyWith({
+    Voice? voice,
     int? start,
     int? duration,
     Staff? staff,
@@ -53,7 +54,7 @@ class VoiceEvent {
     id: id,
     start: start ?? this.start,
     duration: duration ?? this.duration,
-    voice: voice,
+    voice: voice ?? this.voice,
     staff: staff ?? this.staff,
     pitches: pitches ?? this.pitches,
     generatedRest: generatedRest ?? this.generatedRest,
@@ -679,6 +680,40 @@ class ScoreEditor {
         _repeatEnds.add(measure);
       } else {
         _repeatEnds.remove(measure);
+      }
+    });
+  }
+
+  /// Swaps everything written in voices [a] and [b] within one bar.
+  void swapVoices(int measure, Voice a, Voice b) {
+    if (measure < 0 || measure >= _measureCount) {
+      throw const EditException('Invalid bar.');
+    }
+    if (a == b) throw const EditException('Choose two different voices.');
+    final start = measureStart(measure);
+    final end = measureStart(measure + 1);
+    final moving = [
+      for (final event in _events)
+        if (!event.generatedRest &&
+            (event.voice == a || event.voice == b) &&
+            event.start < end &&
+            event.end > start)
+          event,
+    ];
+    for (final event in moving) {
+      if (event.start < start ||
+          event.end > end ||
+          (event.tieFromPrevious && event.start == start) ||
+          (event.tieToNext && event.end == end)) {
+        throw const EditException(
+          'Notes tied across the bar line cannot be switched.',
+        );
+      }
+    }
+    if (moving.isEmpty) return;
+    _commit(() {
+      for (final event in moving) {
+        _replace(event, event.copyWith(voice: event.voice == a ? b : a));
       }
     });
   }
