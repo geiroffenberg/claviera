@@ -83,4 +83,42 @@ void main() {
       throwsA(isA<EditException>()),
     );
   });
+
+  group('voice transpose', () {
+    test('moves one voice in one bar by staff steps and octaves', () {
+      final e = editor();
+      e.transposeVoice(0, Voice.v1, 1);
+      expect(midi(e, Voice.v1, 0), [69]);
+      expect(midi(e, Voice.v2, 0), [60]);
+      expect(midi(e, Voice.v1, 1), [67]);
+      e.transposeVoice(0, Voice.v1, -7);
+      expect(midi(e, Voice.v1, 0), [57]);
+      e.undo();
+      expect(midi(e, Voice.v1, 0), [69]);
+    });
+
+    test('accidentals follow the note and the range is protected', () {
+      final e = ScoreEditor(blankScore);
+      e.append(
+        voice: Voice.v1,
+        staff: Staff.treble,
+        duration: 960,
+        pitch: const Pitch(
+          diatonicStep: 31,
+          midiNote: 66,
+          accidental: Accidental.sharp,
+        ),
+        measure: 0,
+      );
+      e.transposeVoice(0, Voice.v1, 1);
+      final pitch = e.score.measures[0].events.first.pitches.single;
+      expect((pitch.diatonicStep, pitch.midiNote), (32, 68));
+      expect(pitch.accidental, Accidental.sharp);
+      expect(
+        () => e.transposeVoice(0, Voice.v1, 40),
+        throwsA(isA<EditException>()),
+      );
+      expect(e.score.measures[0].events.first.pitches.single.midiNote, 68);
+    });
+  });
 }

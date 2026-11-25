@@ -718,6 +718,107 @@ class ScoreEditor {
     });
   }
 
+  /// Moves every note of [voice] in one bar by [steps] staff positions.
+  /// Accidentals follow their notes; 7 steps is one octave.
+  void transposeVoice(int measure, Voice voice, int steps) {
+    if (measure < 0 || measure >= _measureCount) {
+      throw const EditException('Invalid bar.');
+    }
+    if (steps == 0) return;
+    final start = measureStart(measure);
+    final end = measureStart(measure + 1);
+    final moving = [
+      for (final event in _events)
+        if (!event.generatedRest &&
+            event.voice == voice &&
+            !event.isRest &&
+            event.start < end &&
+            event.end > start)
+          event,
+    ];
+    for (final event in moving) {
+      if (event.start < start ||
+          event.end > end ||
+          (event.tieFromPrevious && event.start == start) ||
+          (event.tieToNext && event.end == end)) {
+        throw const EditException(
+          'Notes tied across the bar line cannot be transposed.',
+        );
+      }
+    }
+    if (moving.isEmpty) return;
+    final key = keyAt(measure);
+    final resolved = {for (final e in _resolvedEvents()) e.id: e};
+    final desired = <int, List<int>>{};
+    final moved = <int, VoiceEvent>{};
+    for (final event in moving) {
+      final pitches = <Pitch>[];
+      final sounding = <int>[];
+      for (var i = 0; i < event.pitches.length; i++) {
+        final pitch = event.pitches[i];
+        final alteration =
+            resolved[event.id]!.pitches[i].midiNote -
+            soundingMidi(pitch.diatonicStep, Accidental.natural, 0);
+        final step = pitch.diatonicStep + steps;
+        final natural = step < 0
+            ? -1
+            : soundingMidi(step, Accidental.natural, 0);
+        final midi = natural + alteration;
+        if (alteration.abs() > 1 || natural < 0 || midi < 21 || midi > 108) {
+          throw const EditException(
+            'The notes would go outside the piano range.',
+          );
+        }
+        final accidental = alteration == keyAlteration(key, step)
+            ? Accidental.none
+            : switch (alteration) {
+                -1 => Accidental.flat,
+                1 => Accidental.sharp,
+                _ => Accidental.natural,
+              };
+        sounding.add(midi);
+        pitches.add(
+          Pitch(diatonicStep: step, midiNote: midi, accidental: accidental),
+        );
+      }
+      desired[event.id] = sounding;
+      moved[event.id] = event.copyWith(pitches: pitches);
+    }
+    _commit(() {
+      for (final event in moving) {
+        _replace(event, moved[event.id]!);
+      }
+      // A carried accidental earlier in the bar can change an unmarked note;
+      // mark such notes explicitly so they keep their sound.
+      final order = moving.map((e) => e.id).toList()
+        ..sort((a, b) => moved[a]!.start.compareTo(moved[b]!.start));
+      for (final id in order) {
+        _resolvedCache = null;
+        final actual = _resolvedEvents().firstWhere((e) => e.id == id);
+        final current = _events.firstWhere((e) => e.id == id);
+        final fixed = [...current.pitches];
+        var changed = false;
+        for (var i = 0; i < fixed.length; i++) {
+          final want = desired[id]![i];
+          if (actual.pitches[i].midiNote == want) continue;
+          final alteration =
+              want - soundingMidi(fixed[i].diatonicStep, Accidental.natural, 0);
+          fixed[i] = Pitch(
+            diatonicStep: fixed[i].diatonicStep,
+            midiNote: want,
+            accidental: switch (alteration) {
+              -1 => Accidental.flat,
+              1 => Accidental.sharp,
+              _ => Accidental.natural,
+            },
+          );
+          changed = true;
+        }
+        if (changed) _replace(current, current.copyWith(pitches: fixed));
+      }
+    });
+  }
+
   static const maxBarNoteLength = 60;
 
   Map<int, String> get barNotes => Map.unmodifiable(_notes);

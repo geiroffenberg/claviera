@@ -955,6 +955,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                 onPressed: () => Navigator.pop(context, 'voiceSwitch'),
               ),
               OutlinedButton.icon(
+                icon: const Icon(Icons.unfold_more),
+                label: const Text('Voice transpose'),
+                onPressed: () => Navigator.pop(context, 'voiceTranspose'),
+              ),
+              OutlinedButton.icon(
                 icon: const Icon(Icons.notes),
                 label: const Text('Bar note'),
                 onPressed: () => Navigator.pop(context, 'note'),
@@ -984,6 +989,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       await _setBarRepeats(measure);
     } else if (choice == 'voiceSwitch') {
       await _voiceSwitch(measure);
+    } else if (choice == 'voiceTranspose') {
+      await _voiceTranspose(measure);
     } else if (choice == 'note') {
       await _setBarNote(measure);
     } else if (choice == 'edit') {
@@ -1020,6 +1027,78 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     );
     if (pair == null || !mounted) return;
     _perform(() => editor.swapVoices(measure, pair.$1, pair.$2));
+  }
+
+  Future<void> _voiceTranspose(int measure) async {
+    final target = voice;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          void move(int steps) {
+            try {
+              setState(() => editor.transposeVoice(measure, target, steps));
+              _queueRecovery();
+              update(() => error = null);
+            } on EditException catch (exception) {
+              update(() => error = exception.message);
+            }
+          }
+
+          return AlertDialog(
+            title: Text(
+              'Bar ${measure + 1} voice transpose (V${target.index + 1})',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (label, steps) in const [
+                        ('+1', 1),
+                        ('-1', -1),
+                        ('+12', 7),
+                        ('-12', -7),
+                      ])
+                        OutlinedButton(
+                          onPressed: () => move(steps),
+                          child: Text(label),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '±1 moves one step on the staff; ±12 moves one octave. '
+                    'Change the voice in the right sidebar.',
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _setBarNote(int measure) async {
