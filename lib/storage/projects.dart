@@ -43,9 +43,12 @@ class ProjectCodec {
           .any((event) => event.tuplet != null),
     );
     // Version 10 and later always write the tie flags.
-    final writeTies = hasTies || hasTuplets;
+    final hasNotes = project.editor.barNotes.isNotEmpty;
+    final writeTies = hasTies || hasTuplets || hasNotes;
     return jsonEncode({
-      'version': hasTuplets
+      'version': hasNotes
+          ? 12
+          : hasTuplets
           ? 11
           : hasTies
           ? 10
@@ -98,6 +101,13 @@ class ProjectCodec {
               in (project.editor.dynamicChanges.entries.toList()
                 ..sort((a, b) => a.key.compareTo(b.key))))
             {'tick': entry.key, 'mark': entry.value.name},
+        ],
+      if (hasNotes)
+        'barNotes': [
+          for (final entry
+              in (project.editor.barNotes.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'measure': entry.key, 'text': entry.value},
         ],
       if (project.editor.repeatStarts.isNotEmpty)
         'repeatStarts': project.editor.repeatStarts.toList()..sort(),
@@ -186,7 +196,7 @@ class ProjectCodec {
     }
 
     final version = raw['version'];
-    if (version is! int || version < 1 || version > 11) {
+    if (version is! int || version < 1 || version > 12) {
       throw const FormatException('Unsupported project version.');
     }
     final name = raw['name'];
@@ -260,6 +270,25 @@ class ProjectCodec {
         }
       }
       return marks;
+    }
+
+    final barNotes = <int, String>{};
+    if (version >= 12 && raw.containsKey('barNotes')) {
+      final items = raw['barNotes'];
+      if (items is! List) throw const FormatException('Invalid barNotes.');
+      for (final item in items) {
+        if (item is! Map ||
+            item['measure'] is! int ||
+            item['text'] is! String ||
+            item['measure'] < 0 ||
+            item['measure'] >= count ||
+            (item['text'] as String).isEmpty ||
+            (item['text'] as String).length > ScoreEditor.maxBarNoteLength ||
+            barNotes.containsKey(item['measure'])) {
+          throw const FormatException('Invalid barNotes.');
+        }
+        barNotes[item['measure'] as int] = item['text'] as String;
+      }
     }
 
     final starts = version >= 4 ? repeatMarks('repeatStarts') : <int>{};
@@ -474,6 +503,7 @@ class ProjectCodec {
             keySignature: keys[i],
             repeatStart: starts.contains(i),
             repeatEnd: ends.contains(i),
+            note: barNotes[i] ?? '',
             dynamics: dynamics[i],
             arpeggios: arpeggios[i],
           ),

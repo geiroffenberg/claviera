@@ -80,6 +80,7 @@ class _Snapshot {
     this.dynamics,
     this.hairpins,
     this.arpeggios,
+    this.notes,
   );
   final List<VoiceEvent> events;
   final int measureCount;
@@ -95,6 +96,7 @@ class _Snapshot {
   final Map<int, DynamicMark> dynamics;
   final List<Hairpin> hairpins;
   final Map<int, ArpeggioDirection> arpeggios;
+  final Map<int, String> notes;
 }
 
 class _BarData {
@@ -107,6 +109,7 @@ class _BarData {
     this.explicitTempo = false,
     this.repeatStart = false,
     this.repeatEnd = false,
+    this.note = '',
   });
 
   final TimeSignature time;
@@ -117,6 +120,7 @@ class _BarData {
   final bool explicitTempo;
   final bool repeatStart;
   final bool repeatEnd;
+  final String note;
 }
 
 class BarClipboard {
@@ -175,6 +179,10 @@ class ScoreEditor {
         for (var i = 0; i < source.measures.length; i++)
           for (final entry in source.measures[i].arpeggios.entries)
             source.measureStart(i) + entry.key: entry.value,
+      },
+      _notes = {
+        for (var i = 0; i < source.measures.length; i++)
+          if (source.measures[i].note.isNotEmpty) i: source.measures[i].note,
       },
       _measureCount = source.measures.length {
     for (var measure = 0; measure < source.measures.length; measure++) {
@@ -237,6 +245,7 @@ class ScoreEditor {
   Map<int, TimeSignature> _times;
   Map<int, int> _keys;
   Set<int> _repeatStarts;
+  Map<int, String> _notes;
   Set<int> _repeatEnds;
   Map<int, DynamicMark> _dynamics;
   List<Hairpin> _hairpins;
@@ -505,6 +514,7 @@ class ScoreEditor {
     Map.of(_dynamics),
     List.of(_hairpins),
     Map.of(_arpeggios),
+    Map.of(_notes),
   );
   void _restore(_Snapshot snapshot) {
     _resolvedCache = null;
@@ -522,6 +532,7 @@ class ScoreEditor {
     _dynamics = Map.of(snapshot.dynamics);
     _hairpins = List.of(snapshot.hairpins);
     _arpeggios = Map.of(snapshot.arpeggios);
+    _notes = Map.of(snapshot.notes);
   }
 
   void _commit(void Function() change) {
@@ -672,6 +683,30 @@ class ScoreEditor {
     });
   }
 
+  static const maxBarNoteLength = 60;
+
+  Map<int, String> get barNotes => Map.unmodifiable(_notes);
+
+  void setBarNote(int measure, String text) {
+    if (measure < 0 || measure >= _measureCount) {
+      throw const EditException('Invalid bar.');
+    }
+    final value = text.trim();
+    if (value.length > maxBarNoteLength) {
+      throw const EditException(
+        'A bar note can have at most $maxBarNoteLength characters.',
+      );
+    }
+    if ((_notes[measure] ?? '') == value) return;
+    _commit(() {
+      if (value.isEmpty) {
+        _notes.remove(measure);
+      } else {
+        _notes[measure] = value;
+      }
+    });
+  }
+
   List<_BarData> _barData(int initialTempo) {
     var time = TimeSignature(_beats, _unit);
     var key = _key;
@@ -687,6 +722,7 @@ class ScoreEditor {
           explicitTempo: _tempos.containsKey(i),
           repeatStart: _repeatStarts.contains(i),
           repeatEnd: _repeatEnds.contains(i),
+          note: _notes[i] ?? '',
         ),
     ];
   }
@@ -910,6 +946,10 @@ class ScoreEditor {
       _repeatEnds = {
         for (var i = 0; i < bars.length; i++)
           if (bars[i].repeatEnd) i,
+      };
+      _notes = {
+        for (var i = 0; i < bars.length; i++)
+          if (bars[i].note.isNotEmpty) i: bars[i].note,
       };
     });
   }
@@ -1719,6 +1759,7 @@ class ScoreEditor {
             keySignature: _keys[i],
             repeatStart: _repeatStarts.contains(i),
             repeatEnd: _repeatEnds.contains(i),
+            note: _notes[i] ?? '',
             dynamics: {
               for (final entry in _dynamics.entries)
                 if (entry.key >= measureStart(i) &&

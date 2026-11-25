@@ -45,6 +45,7 @@ class PrintLayout {
           tempo: firstBar.tempo,
           repeatStart: firstBar.repeatStart,
           repeatEnd: firstBar.repeatEnd,
+          note: firstBar.note,
           dynamics: firstBar.dynamics,
           arpeggios: firstBar.arpeggios,
         ),

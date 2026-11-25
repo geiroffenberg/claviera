@@ -5,6 +5,7 @@ import 'package:claviera/notation/score_painter.dart';
 import 'package:claviera/notation/score_viewport.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('bar menu adds, copies and inserts bars', (tester) async {
@@ -67,6 +68,7 @@ void main() {
   testWidgets('getting started is accessible and scrollable in landscape', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     await tester.binding.setSurfaceSize(const Size(568, 320));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const ClavieraApp());
@@ -85,7 +87,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Getting started'));
     await tester.pumpAndSettle();
-    expect(find.text('Write notes'), findsOneWidget);
+    expect(find.text('Write mode / Edit mode'), findsOneWidget);
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pump();
+    expect(
+      (await SharedPreferences.getInstance()).getBool(
+        'claviera.gettingStarted.hidden',
+      ),
+      isTrue,
+    );
     await tester.ensureVisible(find.text('Save and back up'));
     await tester.pumpAndSettle();
     expect(find.text('Save and back up'), findsOneWidget);

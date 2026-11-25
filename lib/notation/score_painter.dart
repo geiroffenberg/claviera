@@ -380,6 +380,23 @@ class ScorePainter extends CustomPainter {
           canvas,
           Offset(x - number.width / 2, _trebleTop - 2.5 * _s),
         );
+        final note = score.measures[m].note;
+        if (note.isNotEmpty) {
+          final barWidth = (28 + signatureSpace(score, m)) * _s - .8 * _s;
+          final label = TextPainter(
+            text: TextSpan(
+              text: note,
+              style: TextStyle(
+                color: const Color(0xff333c39),
+                fontSize: 1.2 * _s,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+            maxLines: 2,
+            ellipsis: '…',
+          )..layout(maxWidth: barWidth);
+          label.paint(canvas, Offset(x + .4 * _s, 28 * _s));
+        }
         final bpm = score.measures[m].tempo;
         if (bpm != null) {
           final marking = TextPainter(

@@ -247,6 +247,7 @@ class Measure {
     this.repeatEnd = false,
     this.dynamics = const {},
     this.arpeggios = const {},
+    this.note = '',
   });
 
   final List<NotationEvent> events;
@@ -257,6 +258,7 @@ class Measure {
   final bool repeatEnd;
   final Map<int, DynamicMark> dynamics;
   final Map<int, ArpeggioDirection> arpeggios;
+  final String note;
 }
 
 class Score {

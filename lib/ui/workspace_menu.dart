@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'workspace_screen.dart' show ChordStackIcon;
 
 void showWorkspaceMenu(
   BuildContext context, {
@@ -62,7 +67,7 @@ void showWorkspaceMenu(
                   label: const Text('Getting started'),
                   onPressed: () {
                     Navigator.pop(sheetContext);
-                    _showGettingStarted(context);
+                    showGettingStarted(context);
                   },
                 ),
               ],
@@ -112,104 +117,179 @@ void showWorkspaceMenu(
   );
 }
 
-void _showGettingStarted(BuildContext context) {
-  showDialog<void>(
+Widget _chip(Widget child) => Container(
+  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+  padding: const EdgeInsets.symmetric(horizontal: 4),
+  alignment: Alignment.center,
+  decoration: BoxDecoration(
+    color: const Color(0xffe6f0eb),
+    borderRadius: BorderRadius.circular(6),
+  ),
+  child: IconTheme(
+    data: const IconThemeData(size: 18, color: Color(0xff244d45)),
+    child: child,
+  ),
+);
+
+Widget _iconChip(IconData icon) => _chip(Icon(icon));
+
+Widget _labelChip(String text, {bool music = false}) => _chip(
+  Text(
+    text,
+    style: TextStyle(
+      fontFamily: music ? 'Bravura' : null,
+      fontSize: music ? 22 : 13,
+      fontWeight: FontWeight.w700,
+      color: const Color(0xff244d45),
+    ),
+  ),
+);
+
+Widget _separator(String text) => Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 4),
+  child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
+);
+
+const _hideGettingStartedKey = 'claviera.gettingStarted.hidden';
+
+Future<SharedPreferences?> _preferences() async {
+  try {
+    return await SharedPreferences.getInstance();
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> showGettingStartedOnFirstRun(BuildContext context) async {
+  final preferences = await _preferences();
+  if (preferences == null ||
+      preferences.getBool(_hideGettingStartedKey) == true) {
+    return;
+  }
+  if (context.mounted) await showGettingStarted(context);
+}
+
+Future<void> showGettingStarted(BuildContext context) async {
+  final preferences = await _preferences();
+  if (!context.mounted) return;
+  var hidden = preferences?.getBool(_hideGettingStartedKey) ?? false;
+  final sections = <(List<Widget>, String, String)>[
+    (
+      [_iconChip(Icons.edit), _separator('/'), _iconChip(Icons.touch_app)],
+      'Write mode / Edit mode',
+      'The top button switches between the two modes. The pencil is Write '
+          'mode: touch the staff and drag up or down to choose a pitch, then '
+          'release to add the note at the green cursor. The pointing hand is '
+          'Edit mode: tap a bar or a note, drag a note vertically to change '
+          'its pitch, change its length, or use Delete. Undo is on the '
+          'right; Redo is in the menu.',
+    ),
+    (
+      [_iconChip(Icons.music_note), _separator('/'), _iconChip(Icons.hotel)],
+      'Note / Rest',
+      'This button switches between writing notes and writing rests. The '
+          'note icon means the next entry is a note; the bed icon means it '
+          'is a rest.',
+    ),
+    (
+      [
+        _labelChip('V1'),
+        _labelChip('V2'),
+        _labelChip('V3'),
+        _labelChip('V4'),
+        _separator('+'),
+        _iconChip(Icons.chevron_left),
+        _iconChip(Icons.chevron_right),
+      ],
+      'Voices and moving around',
+      'V1 to V4 choose the voice you write in. Use the arrows to move '
+          'between notes, and the Bar arrows to choose where to write. Drag '
+          'the score with two fingers to scroll.',
+    ),
+    (
+      [_chip(const ChordStackIcon())],
+      'Chord stack',
+      'Turn on Chord stack to add several notes on top of each other at '
+          'the same position, building a chord.',
+    ),
+    (
+      [
+        _iconChip(Icons.play_arrow),
+        _iconChip(Icons.skip_previous),
+        _iconChip(Icons.speed),
+      ],
+      'Play',
+      'Play starts at the selected bar. Use Go to start beside Play to '
+          'return to the beginning. Tap BPM to set tempo.',
+    ),
+    (
+      [_labelChip('\uE050', music: true), _labelChip('4/4')],
+      'Score settings',
+      'Tap the clefs or time signature to set the initial key and meter. '
+          'Tap the Bar label or a bar number for bar settings and to add or '
+          'edit bars.',
+    ),
+    (
+      [_iconChip(Icons.menu)],
+      'Save and back up',
+      'Use Menu > Save to save your project. Back up project saves an '
+          'editable copy outside the app; Restore project backup opens it as '
+          'a new project.',
+    ),
+  ];
+  await showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Getting started'),
-      content: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (heading, icons, description) in const [
-                (
-                  'Write notes',
-                  [Icons.edit, Icons.music_note, Icons.hotel],
-                  'The pencil button is Write mode; tap it to switch to Edit '
-                      '(the pointing hand). In Write mode, choose a voice and '
-                      'note length. Touch the '
-                      'staff and drag up or down to choose a pitch; release '
-                      'to add it at the green cursor. The note button switches '
-                      'to the bed icon to enter rests.',
-                ),
-                (
-                  'Move around',
-                  [Icons.chevron_left, Icons.chevron_right],
-                  'Drag the score with two fingers to scroll. Use the Bar '
-                      'arrows to choose where to write.',
-                ),
-                (
-                  'Edit',
-                  [Icons.touch_app, Icons.delete_outline, Icons.undo],
-                  'Switch to Edit mode and tap a bar or a note in the active '
-                      'voice. Drag a note vertically to change its pitch, '
-                      'change its length, or use Delete. Undo is on the right; '
-                      'Redo is in the menu.',
-                ),
-                (
-                  'Play',
-                  [Icons.play_arrow, Icons.skip_previous, Icons.speed],
-                  'Play starts at the selected bar. Use Go to start beside '
-                      'Play to return to the beginning. Tap BPM to set tempo.',
-                ),
-                (
-                  'Score settings',
-                  [Icons.view_week_outlined],
-                  'Tap the clefs or time signature to set the initial key '
-                      'and meter. Tap the Bar label or a bar number for bar '
-                      'settings and to add or edit bars.',
-                ),
-                (
-                  'Save and back up',
-                  [Icons.menu],
-                  'Use Menu > Save to save your project. Back up project saves '
-                      'an editable copy outside the app; Restore project '
-                      'backup opens it as a new project.',
-                ),
-              ]) ...[
-                Row(
-                  children: [
-                    for (final icon in icons) ...[
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xffe6f0eb),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(
-                          icon,
-                          size: 18,
-                          color: const Color(0xff244d45),
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Getting started'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (chips, heading, description) in sections) ...[
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          heading,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 8),
+                      ...chips,
                     ],
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        heading,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(description),
-                const SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(description),
+                  const SizedBox(height: 12),
+                ],
               ],
-            ],
+            ),
           ),
         ),
+        actions: [
+          if (preferences != null)
+            CheckboxListTile(
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              value: hidden,
+              title: const Text("Don't show this at startup"),
+              onChanged: (value) {
+                hidden = value ?? false;
+                unawaited(preferences.setBool(_hideGettingStartedKey, hidden));
+                setDialogState(() {});
+              },
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
     ),
   );
 }

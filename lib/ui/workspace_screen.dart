@@ -360,6 +360,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         }
       }
       if (mounted) setState(() => recoveryAvailable = true);
+      if (mounted && Platform.isAndroid && widget.projectStore == null) {
+        unawaited(showGettingStartedOnFirstRun(context));
+      }
     } on FileSystemException catch (error) {
       _storageError('Recovery unavailable: $error');
     } on PlatformException catch (error) {
@@ -947,6 +950,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                 onPressed: () => Navigator.pop(context, 'repeats'),
               ),
               OutlinedButton.icon(
+                icon: const Icon(Icons.notes),
+                label: const Text('Bar note'),
+                onPressed: () => Navigator.pop(context, 'note'),
+              ),
+              OutlinedButton.icon(
                 icon: const Icon(Icons.view_week_outlined),
                 label: const Text('Edit bars'),
                 onPressed: () => Navigator.pop(context, 'edit'),
@@ -969,9 +977,44 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       await _scoreSettings(measure: measure == 0 ? null : measure);
     } else if (choice == 'repeats') {
       await _setBarRepeats(measure);
+    } else if (choice == 'note') {
+      await _setBarNote(measure);
     } else if (choice == 'edit') {
       await _editBars(measure);
     }
+  }
+
+  Future<void> _setBarNote(int measure) async {
+    var input = editor.barNotes[measure] ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Bar ${measure + 1} note'),
+        content: TextFormField(
+          initialValue: input,
+          autofocus: true,
+          maxLength: ScoreEditor.maxBarNoteLength,
+          textCapitalization: TextCapitalization.sentences,
+          onChanged: (value) => input = value,
+          decoration: const InputDecoration(
+            labelText: 'Text under the bar (lyrics, chords, reminders)',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              _perform(() => editor.setBarNote(measure, input));
+              Navigator.pop(context);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _editBars(int measure) async {
@@ -2215,7 +2258,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                           const Divider(),
                           _glyphButton(
                             'Chord stack',
-                            const _ChordStackIcon(),
+                            const ChordStackIcon(),
                             () => setState(() {
                               chordStack = !chordStack;
                               tieArmed = false;
@@ -2649,18 +2692,18 @@ class _TiePainter extends CustomPainter {
   bool shouldRepaint(_TiePainter old) => old.color != color;
 }
 
-class _ChordStackIcon extends StatelessWidget {
-  const _ChordStackIcon();
+class ChordStackIcon extends StatelessWidget {
+  const ChordStackIcon({super.key});
 
   @override
   Widget build(BuildContext context) => CustomPaint(
     size: const Size(24, 24),
-    painter: _StackPainter(IconTheme.of(context).color ?? Colors.black),
+    painter: StackPainter(IconTheme.of(context).color ?? Colors.black),
   );
 }
 
-class _StackPainter extends CustomPainter {
-  const _StackPainter(this.color);
+class StackPainter extends CustomPainter {
+  const StackPainter(this.color);
 
   final Color color;
 
@@ -2685,5 +2728,5 @@ class _StackPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_StackPainter old) => old.color != color;
+  bool shouldRepaint(StackPainter old) => old.color != color;
 }
