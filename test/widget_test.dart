@@ -130,6 +130,15 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
+    final upgrade = find.byTooltip('Upgrade to Pro');
+    final gettingStarted = find.ancestor(
+      of: find.text('Getting started'),
+      matching: find.byType(TextButton),
+    );
+    expect(
+      tester.getTopLeft(gettingStarted).dx - tester.getTopRight(upgrade).dx,
+      greaterThanOrEqualTo(16),
+    );
     await tester.tap(find.text('Getting started'));
     await tester.pumpAndSettle();
     expect(find.text('Write mode / Edit mode'), findsOneWidget);
@@ -148,6 +157,56 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events,
+      hasLength(1),
+    );
+  });
+
+  testWidgets('user manual opens from menu and scrolls on a phone', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('Menu'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).last,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.ensureVisible(find.byTooltip('Menu'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('User manual'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('Getting around')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Articulation palette (Pro)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fermata'), findsOneWidget);
+    await tester.ensureVisible(find.text('Export MusicXML (Pro)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lock'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
     expect(
       tester
           .widget<ScoreViewport>(find.byType(ScoreViewport))

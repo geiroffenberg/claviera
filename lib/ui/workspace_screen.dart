@@ -2511,7 +2511,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             mode == WorkspaceMode.write
                                 ? 'Tie next note'
                                 : 'Tie to previous note',
-                            const _TieIcon(),
+                            const TieIcon(),
                             mode == WorkspaceMode.edit
                                 ? event == null || event.isRest
                                       ? null
@@ -3003,8 +3003,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 }
 
-class _TieIcon extends StatelessWidget {
-  const _TieIcon();
+class TieIcon extends StatelessWidget {
+  const TieIcon({super.key});
 
   @override
   Widget build(BuildContext context) => CustomPaint(

@@ -35,6 +35,7 @@ extracted or shared; it is not strong protection against payment bypass.
 - On Android, open **Menu > Open project > Dream** to load the included demo
   composition. It is installed as an editable project on first launch.
 - Open **Menu > Getting started** for a short guide to the basic controls.
+- Open **Menu > User manual** for an offline guide to the controls and icons.
 - Tap the Claviera icon in the top bar for app information and licenses.
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls
@@ -90,8 +91,9 @@ extracted or shared; it is not strong protection against payment bypass.
   and rests are silent. Tap the BPM value to set a score-wide tempo from 30 to
   240 quarter notes per minute (default 120). Editing is disabled while
   playing, and playback stops at the last event or when the app is backgrounded.
-  The current bar is shaded and sounding notes are highlighted; the previous
-  editing selection returns when playback stops.
+  The current bar is shaded and sounding notes are highlighted. Stopping
+  playback selects the current bar; the previous editing selection is retained
+  if playback is stopped in its starting bar.
   The speaker button mutes note-entry preview only, not score playback.
 - Android score playback mixes all voices and pitch shifts into one music audio
   stream before output, so internal-audio screen recorders receive the combined
@@ -263,7 +265,8 @@ lib/
     musicxml_export.dart       MusicXML score encoding
   ui/
     workspace_screen.dart      Rails and editing interactions
-    workspace_menu.dart        Redo and future actions
+    workspace_menu.dart        Project menu and getting-started guide
+    user_manual.dart           Offline guide to the controls
 assets/fonts/                  Bravura font and its SIL OFL license
 android/app/src/main/assets/piano/  CC0 piano samples and provenance
 ```

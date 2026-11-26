@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'user_manual.dart';
 import 'workspace_screen.dart' show ChordStackIcon;
 
 void showWorkspaceMenu(
@@ -57,6 +58,7 @@ void showWorkspaceMenu(
                     },
                   ),
                 ),
+                const SizedBox(width: 16),
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     minimumSize: Size.zero,
@@ -72,6 +74,14 @@ void showWorkspaceMenu(
                 ),
               ],
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.menu_book_outlined),
+            title: const Text('User manual'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              showUserManual(context);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.redo),
