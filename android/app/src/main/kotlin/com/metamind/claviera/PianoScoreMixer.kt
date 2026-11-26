@@ -18,6 +18,8 @@ internal class PianoScoreMixer(
     val sampleRate: Int = 44100,
     wet: Float = 0.3f,
     tailMs: Int = 1500,
+    feedback: Float = 0.78f,
+    damping: Float = 0.4f,
 ) {
     private data class Note(
         val start: Long,
@@ -42,11 +44,11 @@ internal class PianoScoreMixer(
     private var next = 0
     private var position = 0L
     private val notesEnd = scheduled.maxOfOrNull { it.end } ?: 0L
-    private val reverb = if (wet > 0f) Reverb(sampleRate, wet) else null
+    private val reverb = if (wet > 0f) Reverb(sampleRate, wet, feedback, damping) else null
     // The reverb keeps ringing after the last note stops.
     val totalFrames = notesEnd + if (reverb != null) tailMs.toLong() * sampleRate / 1000 else 0L
     private val gain: Float
-    private val releaseFrames = maxOf(1, sampleRate * 20 / 1000)
+    private val releaseFrames = maxOf(1, sampleRate * 10 / 1000)
 
     init {
         // One constant gain for the score preserves dynamics without clipping chords.
@@ -87,7 +89,11 @@ internal class PianoScoreMixer(
             }
         }
         for (i in 0 until count) {
-            val mixed = reverb?.let { output[i] + it.process(output[i]) } ?: output[i]
+            val frame = position + i
+            val tailFade = if (frame >= notesEnd) {
+                minOf(1f, (totalFrames - 1 - frame).toFloat() / maxOf(1, sampleRate / 10))
+            } else 1f
+            val mixed = reverb?.let { output[i] + it.process(output[i]) * tailFade } ?: output[i]
             output[i] = mixed.coerceIn(-1f, 1f)
         }
         position = blockEnd
@@ -96,16 +102,16 @@ internal class PianoScoreMixer(
 }
 
 // Small Freeverb-style room: parallel damped combs feeding series allpasses.
-private class Reverb(sampleRate: Int, private val wet: Float) {
-    private class Comb(size: Int) {
+private class Reverb(sampleRate: Int, private val wet: Float, feedback: Float, damping: Float) {
+    private class Comb(size: Int, private val feedback: Float, private val damping: Float) {
         private val buffer = FloatArray(size)
         private var index = 0
         private var store = 0f
 
         fun process(input: Float): Float {
             val output = buffer[index]
-            store = output * (1 - DAMP) + store * DAMP
-            buffer[index] = input + store * FEEDBACK
+            store = output * (1 - damping) + store * damping
+            buffer[index] = input + store * feedback
             index = (index + 1) % buffer.size
             return output
         }
@@ -123,7 +129,9 @@ private class Reverb(sampleRate: Int, private val wet: Float) {
         }
     }
 
-    private val combs = COMB_SIZES.map { Comb(maxOf(1, (it * sampleRate / 44100.0).toInt())) }
+    private val combs = COMB_SIZES.map {
+        Comb(maxOf(1, (it * sampleRate / 44100.0).toInt()), feedback, damping)
+    }
     private val allpasses = ALLPASS_SIZES.map { Allpass(maxOf(1, (it * sampleRate / 44100.0).toInt())) }
 
     fun process(input: Float): Float {
@@ -135,8 +143,6 @@ private class Reverb(sampleRate: Int, private val wet: Float) {
     }
 
     private companion object {
-        const val FEEDBACK = 0.78f
-        const val DAMP = 0.4f
         val COMB_SIZES = intArrayOf(1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617)
         val ALLPASS_SIZES = intArrayOf(556, 441, 341, 225)
     }

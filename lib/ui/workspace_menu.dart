@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../audio/reverb_settings.dart';
 import 'user_manual.dart';
 import 'workspace_screen.dart' show ChordStackIcon;
 
@@ -22,6 +24,7 @@ void showWorkspaceMenu(
   required VoidCallback onUpgrade,
   required VoidCallback onBackup,
   required VoidCallback onRestoreBackup,
+  required VoidCallback onReverb,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -121,10 +124,166 @@ void showWorkspaceMenu(
               showUserManual(context);
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.graphic_eq),
+            title: const Text('Reverb'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              onReverb();
+            },
+          ),
         ],
       ),
     ),
   );
+}
+
+Future<void> showReverbSettings(BuildContext context) async {
+  try {
+    var settings = await ReverbSettings.load();
+    if (!context.mounted) return;
+    final chosen = await showDialog<ReverbSettings>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          Widget slider(
+            String label,
+            String description,
+            double value,
+            double min,
+            double max,
+            int divisions,
+            String display,
+            ValueChanged<double> onChanged,
+          ) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$label: $display'),
+              Text(description, style: Theme.of(context).textTheme.bodySmall),
+              Slider(
+                value: value,
+                min: min,
+                max: max,
+                divisions: divisions,
+                label: display,
+                onChanged: settings.enabled
+                    ? (value) => update(() => onChanged(value))
+                    : null,
+              ),
+            ],
+          );
+          return AlertDialog(
+            title: const Text('Reverb'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Score playback only. Changes apply next time you play.',
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Enable reverb'),
+                      value: settings.enabled,
+                      onChanged: (value) => update(
+                        () => settings = settings.copyWith(enabled: value),
+                      ),
+                    ),
+                    slider(
+                      'Reverb level',
+                      'Amount of reverb mixed with the piano.',
+                      settings.wet,
+                      0,
+                      1,
+                      100,
+                      '${(settings.wet * 100).round()}%',
+                      (value) => settings = settings.copyWith(wet: value),
+                    ),
+                    slider(
+                      'Feedback / decay',
+                      'Higher values make the reverb decay more slowly.',
+                      settings.feedback,
+                      0.5,
+                      0.9,
+                      40,
+                      '${(settings.feedback * 100).round()}%',
+                      (value) => settings = settings.copyWith(feedback: value),
+                    ),
+                    slider(
+                      'Damping',
+                      'Higher values soften the reverb’s high frequencies.',
+                      settings.damping,
+                      0,
+                      0.8,
+                      80,
+                      '${(settings.damping * 100).round()}%',
+                      (value) => settings = settings.copyWith(damping: value),
+                    ),
+                    slider(
+                      'Tail length',
+                      'Maximum time the reverb rings after the last note.',
+                      settings.tailMs.toDouble(),
+                      500,
+                      4000,
+                      14,
+                      '${(settings.tailMs / 1000).toStringAsFixed(2)} s',
+                      (value) =>
+                          settings = settings.copyWith(tailMs: value.round()),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    update(() => settings = const ReverbSettings()),
+                child: const Text('Reset'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, settings),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (chosen != null) await chosen.save();
+  } on PlatformException catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not access reverb settings.'),
+        ),
+      );
+    }
+  } on MissingPluginException {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reverb settings are unavailable.')),
+      );
+    }
+  } on FormatException catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  } on StateError catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
 }
 
 Widget _chip(Widget child) => Container(

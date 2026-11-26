@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'score_playback.dart';
+import 'reverb_settings.dart';
 
 class PianoPreview {
   PianoPreview({required this.onError, MethodChannel? channel, bool? supported})
@@ -12,8 +13,6 @@ class PianoPreview {
       _supported = supported ?? (!kIsWeb && Platform.isAndroid) {
     if (_supported) _channel.setMethodCallHandler(_handleNativeCall);
   }
-
-  static const _scoreTail = Duration(milliseconds: 1500);
 
   final void Function(String message) onError;
   final MethodChannel _channel;
@@ -96,11 +95,14 @@ class PianoPreview {
       onError('Add a note or rest before playing.');
       return false;
     }
+    stopScore();
     stop();
     final revision = ++_revision;
     _playingScore = true;
     _onPlaybackFinished = onFinished;
     try {
+      final reverb = await ReverbSettings.load();
+      if (_disposed || revision != _revision) return false;
       final ready = await (_initialization ??= _initialize());
       if (!ready || _disposed || revision != _revision) {
         if (revision == _revision) _playingScore = false;
@@ -121,6 +123,7 @@ class PianoPreview {
       }
       await _channel.invokeMethod<void>('playScore', {
         'notes': plan.notes.map((note) => note.toMap()).toList(),
+        'reverb': reverb.toMap(),
       });
       if (_disposed || revision != _revision) return false;
       _playbackTimer = Timer(Duration(milliseconds: plan.durationMs), () {
@@ -129,7 +132,18 @@ class PianoPreview {
         _playingScore = false;
         _revision++;
         _playbackTimer = null;
-        _tailEndsAt = DateTime.now().add(_scoreTail);
+        final lastNoteEnd = plan.notes.fold<int>(
+          0,
+          (end, note) => note.endMs > end ? note.endMs : end,
+        );
+        final remaining =
+            reverb.enabled && reverb.wet > 0 && plan.notes.isNotEmpty
+            ? (lastNoteEnd + reverb.tailMs - plan.durationMs).clamp(
+                0,
+                reverb.tailMs,
+              )
+            : 0;
+        _tailEndsAt = DateTime.now().add(Duration(milliseconds: remaining));
         _onPlaybackFinished = null;
         onFinished();
       });
@@ -143,6 +157,11 @@ class PianoPreview {
       if (revision == _revision) {
         _playingScore = false;
         _report('Score playback is unavailable on this device.');
+      }
+    } on FormatException catch (error) {
+      if (revision == _revision) {
+        _playingScore = false;
+        _report(error.message);
       }
     }
     return false;

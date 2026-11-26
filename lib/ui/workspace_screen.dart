@@ -2879,6 +2879,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                               onUpgrade: _showProUpgrade,
                               onBackup: _backupProject,
                               onRestoreBackup: _restoreProjectBackup,
+                              onReverb: () => showReverbSettings(context),
                               onRedo: () => _perform(() {
                                 editor.redo();
                                 selectedMeasure = selectedMeasure.clamp(

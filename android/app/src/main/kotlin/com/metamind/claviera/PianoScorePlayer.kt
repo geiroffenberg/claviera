@@ -43,7 +43,7 @@ internal class PianoScorePlayer(
         }
     }
 
-    fun play(notes: List<PianoNote>, result: MethodChannel.Result) {
+    fun play(notes: List<PianoNote>, reverb: ReverbSettings, result: MethodChannel.Result) {
         if (notes.isEmpty()) {
             result.success(null)
             return
@@ -63,7 +63,10 @@ internal class PianoScorePlayer(
             }
             try {
                 if (samples.size != roots.size) throw IOException("Piano samples are not ready.")
-                val mixer = PianoScoreMixer(samples, notes)
+                val mixer = PianoScoreMixer(
+                    samples, notes, wet = if (reverb.enabled) reverb.wet else 0f,
+                    tailMs = reverb.tailMs, feedback = reverb.feedback, damping = reverb.damping,
+                )
                 val totalFrames = mixer.totalFrames
                 val attributes = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)

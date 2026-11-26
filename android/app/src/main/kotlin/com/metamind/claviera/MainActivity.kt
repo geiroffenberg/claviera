@@ -195,6 +195,7 @@ class MainActivity : FlutterActivity() {
                     "prepareScore" -> prepareScore(result)
                     "playScore" -> {
                         val notes = call.argument<List<Map<String, Int>>>("notes")
+                        val reverb = call.argument<Map<String, Any>>("reverb")?.let(ReverbSettings::fromMap)
                         if (notes == null || notes.any {
                                 val midi = it["midi"]
                                 val start = it["startMs"]
@@ -205,10 +206,12 @@ class MainActivity : FlutterActivity() {
                                     volume == null || volume !in 1..127
                             }) {
                             result.error("invalid_score", "Invalid score playback data.", null)
+                        } else if (reverb == null) {
+                            result.error("invalid_reverb", "Invalid reverb settings.", null)
                         } else if (pool == null || pendingInit != null || loadingFailed) {
                             result.error("not_ready", "Piano samples are not ready.", null)
                         } else {
-                            startScore(notes, result)
+                            startScore(notes, reverb, result)
                         }
                     }
                     "stopScore" -> {
@@ -424,7 +427,7 @@ class MainActivity : FlutterActivity() {
         scorePlayer.prepare(result)
     }
 
-    private fun startScore(notes: List<Map<String, Int>>, result: MethodChannel.Result) {
+    private fun startScore(notes: List<Map<String, Int>>, reverb: ReverbSettings, result: MethodChannel.Result) {
         stopScore()
         pendingStop?.let(handler::removeCallbacks)
         pendingStop = null
@@ -432,7 +435,7 @@ class MainActivity : FlutterActivity() {
         stream = 0
         scorePlayer.play(notes.map {
             PianoNote(it.getValue("midi"), it.getValue("startMs"), it.getValue("endMs"), it.getValue("volume"))
-        }, result)
+        }, reverb, result)
     }
 
     private fun stopScore() {

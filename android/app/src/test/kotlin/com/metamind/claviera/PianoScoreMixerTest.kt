@@ -58,7 +58,7 @@ class PianoScoreMixerTest {
         assertTrue(output.slice(10 until 30).all { it == 0.5f })
         assertTrue(output.slice(30 until 50).all { it == 1f })
         assertEquals(0.5f, output[69], 0.00001f)
-        assertEquals(0.475f, output[70], 0.00001f)
+        assertEquals(0.5f, output[70], 0.00001f)
         assertEquals(0f, output[89], 0.00001f)
         assertTrue(output.slice(90 until 100).all { it == 0f })
         assertTrue(output.slice(100 until 120).all { it == 0.5f })
@@ -75,11 +75,28 @@ class PianoScoreMixerTest {
         )
         val output = FloatArray(55)
         assertEquals(55, mixer.read(output))
-        assertEquals(1f, output[19], 0.00001f)
-        assertEquals(0.95f, output[20], 0.00001f)
+        assertEquals(1f, output[29], 0.00001f)
+        assertEquals(0.9f, output[30], 0.00001f)
         assertEquals(0f, output[39], 0.00001f)
         assertEquals(0.8f, output[50], 0.00001f)
         assertEquals(0f, output[54], 0.00001f)
+    }
+
+    @Test
+    fun releaseIsTenMillisecondsAtPlaybackSampleRate() {
+        val rate = 44100
+        val mixer = PianoScoreMixer(
+            mapOf(60 to PianoSample(rate, FloatArray(rate) { 1f })),
+            listOf(PianoNote(60, 0, 100, 127)),
+            rate,
+            wet = 0f,
+        )
+        val output = FloatArray(rate / 10)
+        assertEquals(output.size, mixer.read(output))
+        assertEquals(1f, output[output.size - 442], 0.00001f)
+        assertEquals(440f / 441, output[output.size - 441], 0.00001f)
+        assertEquals(0f, output.last(), 0f)
+        assertEquals(0, mixer.read(output))
     }
 
     @Test
@@ -131,5 +148,48 @@ class PianoScoreMixerTest {
         assertTrue(peak(noteEnd + 200, noteEnd + 2200) > 0.001f)
         assertTrue(peak(output.size - 1000, output.size) < peak(noteEnd + 200, noteEnd + 2200))
         assertTrue(output.all { abs(it) <= 1f })
+    }
+
+    @Test
+    fun reverbSettingsChangeTailAndFeedback() {
+        val rate = 8000
+        val samples = mapOf(60 to PianoSample(rate, FloatArray(rate) {
+            sin(2 * PI * 440 * it / rate).toFloat()
+        }))
+        val notes = listOf(PianoNote(60, 0, 250, 127))
+        fun render(feedback: Float): FloatArray {
+            val mixer = PianoScoreMixer(samples, notes, rate, wet = 0.8f,
+                tailMs = 2000, feedback = feedback, damping = 0.4f)
+            return FloatArray(mixer.totalFrames.toInt()).also { mixer.read(it) }
+        }
+        val low = render(0.5f)
+        val high = render(0.9f)
+        val start = rate
+        val end = rate * 2
+        assertTrue(high.slice(start until end).sumOf { (it * it).toDouble() } >
+            low.slice(start until end).sumOf { (it * it).toDouble() })
+        assertEquals(0f, high.last(), 0f)
+        val dry = PianoScoreMixer(samples, notes, rate, wet = 0f, tailMs = 2000)
+        assertEquals(2000L, dry.totalFrames)
+    }
+
+    @Test
+    fun dampingAndLevelAffectReverbOutput() {
+        val rate = 8000
+        val samples = mapOf(60 to PianoSample(rate, FloatArray(rate) {
+            sin(2 * PI * 1800 * it / rate).toFloat()
+        }))
+        val notes = listOf(PianoNote(60, 0, 250, 127))
+        fun render(wet: Float, damping: Float): FloatArray {
+            val mixer = PianoScoreMixer(samples, notes, rate, wet = wet, damping = damping)
+            return FloatArray(mixer.totalFrames.toInt()).also { mixer.read(it) }
+        }
+        fun energy(output: FloatArray) =
+            output.slice(2000 until 5000).sumOf { (it * it).toDouble() }
+        val quiet = render(0.2f, 0f)
+        val loud = render(0.8f, 0f)
+        val damped = render(0.8f, 0.8f)
+        assertTrue(energy(loud) > energy(quiet))
+        assertTrue(energy(damped) < energy(loud))
     }
 }

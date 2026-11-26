@@ -7,6 +7,9 @@ import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:claviera/audio/reverb_settings.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -119,6 +122,65 @@ void main() {
     expect(errors, ['Sample unavailable']);
     expect(calls.map((call) => call.method), ['initialize']);
     piano.dispose();
+  });
+
+  testWidgets('menu saves, restores and resets reverb settings', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const MaterialApp(home: WorkspaceScreen()));
+    await tester.pumpAndSettle();
+
+    Future<void> openReverb() async {
+      await tester.tap(find.byTooltip('Menu'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Reverb'),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(find.text('Reverb'));
+      await tester.pumpAndSettle();
+    }
+
+    await openReverb();
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isTrue,
+    );
+    tester.widget<Slider>(find.byType(Slider).first).onChanged!(0.6);
+    await tester.pump();
+    await tester.tap(find.text('Enable reverb'));
+    await tester.pump();
+    expect(tester.widget<Slider>(find.byType(Slider).first).onChanged, isNull);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect((await ReverbSettings.load()).enabled, isFalse);
+    expect((await ReverbSettings.load()).wet, 0.6);
+
+    await openReverb();
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isFalse,
+    );
+    await tester.tap(find.text('Reset'));
+    await tester.pump();
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isTrue,
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(
+      (await ReverbSettings.load()).toMap(),
+      const ReverbSettings().toMap(),
+    );
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets(

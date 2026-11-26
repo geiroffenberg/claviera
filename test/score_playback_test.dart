@@ -10,6 +10,9 @@ import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:claviera/audio/reverb_settings.dart';
 
 const c = Pitch(diatonicStep: 28, midiNote: 60);
 const sharp = Pitch(
@@ -668,6 +671,7 @@ void main() {
   Completer<void>? loading;
   Completer<bool>? preparing;
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     calls.clear();
     errors.clear();
     loading = null;
@@ -703,6 +707,7 @@ void main() {
     ]);
     final arguments = calls.last.arguments as Map;
     expect((arguments['notes'] as List), hasLength(4));
+    expect(arguments['reverb'], const ReverbSettings().toMap());
     await tester.pump(const Duration(milliseconds: 100));
     piano.stopScore();
     await tester.pump(const Duration(seconds: 5));
@@ -711,6 +716,33 @@ void main() {
     expect(calls.last.method, 'stopScore');
     expect(errors, isEmpty);
     piano.dispose();
+  });
+
+  testWidgets('saved reverb settings are sent with the next score', (
+    tester,
+  ) async {
+    const settings = ReverbSettings(
+      enabled: false,
+      wet: 0.6,
+      feedback: 0.85,
+      damping: 0.2,
+      tailMs: 3000,
+    );
+    await settings.save();
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    final future = piano.playScore(
+      PlaybackPlan(ScoreEditor(fixture), 120),
+      onFinished: () {},
+    );
+    await tester.pump();
+    expect(await future, isTrue);
+    expect((calls.last.arguments as Map)['reverb'], settings.toMap());
+    piano.dispose();
+    await tester.pump();
   });
 
   testWidgets('stop during loading prevents playback from starting', (

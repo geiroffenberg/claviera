@@ -238,6 +238,12 @@ void showUserManual(BuildContext context) {
           'Piano preview',
           'Mute or enable the note-entry preview. This does not mute score playback.',
         ),
+        (
+          [_icon(Icons.graphic_eq)],
+          'Reverb',
+          'Use Menu > Reverb to enable or adjust the score playback reverb. '
+              'Changes apply the next time you play; note-entry previews stay dry.',
+        ),
       ],
     ),
     (
