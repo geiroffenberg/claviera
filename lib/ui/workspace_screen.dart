@@ -55,6 +55,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool rest = false;
   bool tieArmed = false;
   int dots = 0;
+  Accidental writeAccidental = Accidental.none;
   int tupletSize = 0;
   bool chordStack = false;
   int? selectedId;
@@ -666,6 +667,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     } else {
       piano.stop();
     }
+  }
+
+  Pitch _writePitchAt(Offset position, Staff staff) {
+    final pitch = ScorePainter.pitchAt(position.dy, staff, 10);
+    return Pitch(
+      diatonicStep: pitch.diatonicStep,
+      midiNote: pitch.midiNote,
+      accidental: writeAccidental,
+    );
   }
 
   Future<void> _scoreSettings({int? measure}) async {
@@ -1999,10 +2009,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       previewStaff = chordStack && selected != null && !selected!.isRest
           ? selected!.staff
           : ScorePainter.staffAt(position.dy, 10);
-      setState(
-        () => preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10),
-      );
-      _previewPitch(preview!);
+      setState(() => preview = _writePitchAt(position, previewStaff!));
+      _previewPitch(preview!, accidental: writeAccidental);
     }
   }
 
@@ -2019,9 +2027,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
         if (!(chordStack && selected != null && !selected!.isRest)) {
           previewStaff = ScorePainter.staffAt(position.dy, 10);
         }
-        preview = ScorePainter.pitchAt(position.dy, previewStaff!, 10);
+        preview = _writePitchAt(position, previewStaff!);
       });
-      _previewPitch(preview!);
+      _previewPitch(preview!, accidental: writeAccidental);
     } else if (mode == WorkspaceMode.edit &&
         selected != null &&
         !selected!.isRest &&
@@ -2079,7 +2087,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       return;
     }
     final staff = previewStaff ?? ScorePainter.staffAt(position.dy, 10);
-    final pitch = preview ?? ScorePainter.pitchAt(position.dy, staff, 10);
+    final pitch =
+        preview ??
+        (mode == WorkspaceMode.write
+            ? _writePitchAt(position, staff)
+            : ScorePainter.pitchAt(position.dy, staff, 10));
     final moved = (position.dy - gestureStart!.dy).abs() > 5;
     final bar = barGesture;
     final isTap = (position - gestureStart!).distance < 15;
@@ -2237,6 +2249,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   }
 
   void _accidental(Accidental accidental) {
+    if (mode == WorkspaceMode.write) {
+      setState(() {
+        writeAccidental = writeAccidental == accidental
+            ? Accidental.none
+            : accidental;
+      });
+      return;
+    }
     final event = selected;
     if (event == null || event.isRest) {
       _perform(
@@ -2436,11 +2456,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             _textButton(
                               item.$2,
                               '${item.$2} accidental',
-                              mode == WorkspaceMode.edit &&
-                                      event != null &&
-                                      !event.isRest
+                              mode == WorkspaceMode.write ||
+                                      (event != null && !event.isRest)
                                   ? () => _accidental(item.$1)
                                   : null,
+                              selected:
+                                  mode == WorkspaceMode.write &&
+                                  writeAccidental == item.$1,
                             ),
                           const Divider(),
                           _glyphButton(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:claviera/audio/piano_preview.dart';
+import 'package:claviera/models/score.dart';
 import 'package:claviera/notation/score_viewport.dart';
 import 'package:claviera/ui/workspace_screen.dart';
 import 'package:flutter/material.dart';
@@ -259,6 +260,193 @@ void main() {
       score.measures.first.events.map((event) => event.pitches.single.midiNote),
       [66, 66],
     );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'write accidentals stay selected, sound correctly and toggle off',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final piano = PianoPreview(
+        onError: errors.add,
+        channel: channel,
+        supported: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('eighth note'));
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.byTooltip('♯ accidental'),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        ),
+      );
+      final origin = tester.getTopLeft(
+        find.byKey(const ValueKey('score-canvas')),
+      );
+      final position = origin + const Offset(160, 115);
+
+      await tester.tap(find.byTooltip('♯ accidental'));
+      await tester.pump();
+      final gesture = await tester.startGesture(position);
+      await tester.pump();
+      expect(calls.where((call) => call.method == 'play').last.arguments, {
+        'midi': 66,
+      });
+      expect(
+        tester
+            .widget<ScoreViewport>(find.byType(ScoreViewport))
+            .previewPitch!
+            .accidental,
+        Accidental.sharp,
+      );
+      await gesture.up();
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+      await tester.tap(find.byTooltip('♯ accidental'));
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+      await tester.tap(find.byTooltip('♭ accidental'));
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+      await tester.tap(find.byTooltip('♮ accidental'));
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+
+      final pitches = tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events
+          .map((event) => event.pitches.single)
+          .toList();
+      expect(pitches.map((pitch) => pitch.accidental), [
+        Accidental.sharp,
+        Accidental.sharp,
+        Accidental.none,
+        Accidental.flat,
+        Accidental.natural,
+      ]);
+      expect(pitches.map((pitch) => pitch.midiNote), [66, 66, 66, 64, 65]);
+
+      final rail = find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.byTooltip('Write mode'),
+        -200,
+        scrollable: rail,
+      );
+      await tester.tap(find.byTooltip('Write mode'));
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.byTooltip('♭ accidental'),
+        200,
+        scrollable: rail,
+      );
+      await tester.tap(find.byTooltip('♭ accidental'));
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.byTooltip('Edit mode'),
+        -200,
+        scrollable: rail,
+      );
+      await tester.tap(find.byTooltip('Edit mode'));
+      await tester.pump();
+      await tester.tapAt(position);
+      await tester.pump();
+      final updated = tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .first
+          .events;
+      expect(updated.first.pitches.single.accidental, Accidental.flat);
+      expect(updated.last.pitches.single.accidental, Accidental.natural);
+      expect(updated.last.pitches.single.midiNote, 65);
+      expect(errors, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('write accidentals apply to chords but not rests', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const MaterialApp(home: WorkspaceScreen()));
+    await tester.pump();
+    final origin = tester.getTopLeft(
+      find.byKey(const ValueKey('score-canvas')),
+    );
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byTooltip('♭ accidental'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('♭ accidental'));
+    await tester.scrollUntilVisible(
+      find.byTooltip('Chord stack'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Chord stack'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 105));
+    await tester.pump();
+    var events = tester
+        .widget<ScoreViewport>(find.byType(ScoreViewport))
+        .score
+        .measures
+        .first
+        .events;
+    expect(events.single.pitches.map((pitch) => pitch.accidental), [
+      Accidental.none,
+      Accidental.flat,
+    ]);
+    expect(events.single.pitches.last.midiNote, 68);
+    await tester.tap(find.byTooltip('Chord stack'));
+    await tester.scrollUntilVisible(
+      find.byTooltip('Note'),
+      -200,
+      scrollable: find.descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byTooltip('Note'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    events = tester
+        .widget<ScoreViewport>(find.byType(ScoreViewport))
+        .score
+        .measures
+        .first
+        .events;
+    expect(events.last.isRest, isTrue);
     await tester.pumpWidget(const SizedBox());
   });
 

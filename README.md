@@ -66,6 +66,10 @@ extracted or shared; it is not strong protection against payment bypass.
   crossing a barline may consume generated rests in the next bar.
   Dragging between the treble and bass staves switches the note to that staff;
   chord stack keeps the selected chord's staff.
+- In Write mode, select sharp, flat or natural to apply it to each entered
+  pitch. Tap the selected accidental again to turn it off, or choose another.
+  With none selected, normal key-signature and in-bar accidental rules apply.
+  In Edit mode, select a note first, then tap an accidental to change it.
 - On Android, the piano preview plays the pitch while entering or dragging a
   note. Use the speaker button in the header to mute it. It is an experimental
   single-note preview; device latency may vary.
