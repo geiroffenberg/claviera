@@ -716,6 +716,213 @@ void main() {
     expect(tester.getTopLeft(canvas).dx, lessThan(origin.dx));
   });
 
+  testWidgets('two-finger flings coast, stop on touch and respect edges', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    final scroll = tester
+        .widgetList<SingleChildScrollView>(
+          find.descendant(
+            of: find.byType(ScoreViewport),
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .singleWhere((view) => view.scrollDirection == Axis.horizontal)
+        .controller!;
+    final one = await tester.createGesture(pointer: 1);
+    final two = await tester.createGesture(pointer: 2);
+    Future<void> swipe(double delta, {bool pause = false}) async {
+      final origin = tester.getTopLeft(find.byType(ScoreViewport));
+      await one.down(origin + const Offset(450, 120));
+      await two.down(
+        origin + const Offset(500, 120),
+        timeStamp: const Duration(milliseconds: 1),
+      );
+      for (var i = 0; i < 4; i++) {
+        await one.moveBy(
+          Offset(delta, 0),
+          timeStamp: Duration(milliseconds: 10 + i * 20),
+        );
+        await two.moveBy(
+          Offset(delta, 0),
+          timeStamp: Duration(milliseconds: 10 + i * 20),
+        );
+      }
+      await one.up(timeStamp: Duration(milliseconds: pause ? 300 : 82));
+      await two.up(timeStamp: Duration(milliseconds: pause ? 302 : 84));
+    }
+
+    await swipe(-25);
+    final released = scroll.offset;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(scroll.offset, greaterThan(released));
+    final moving = scroll.offset;
+    await tester.tapAt(tester.getCenter(find.byType(ScoreViewport)));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(scroll.offset, closeTo(moving, 0.01));
+    expect(
+      tester
+          .widget<ScoreViewport>(find.byType(ScoreViewport))
+          .score
+          .measures
+          .expand((measure) => measure.events),
+      isEmpty,
+    );
+
+    await swipe(25);
+    final reverse = scroll.offset;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(scroll.offset, lessThan(reverse));
+    await tester.tapAt(tester.getCenter(find.byType(ScoreViewport)));
+    await tester.pump();
+    await swipe(-25, pause: true);
+    final stopped = scroll.offset;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(scroll.offset, stopped);
+
+    final origin = tester.getTopLeft(find.byType(ScoreViewport));
+    await one.down(origin + const Offset(450, 120));
+    await two.down(
+      origin + const Offset(500, 120),
+      timeStamp: const Duration(milliseconds: 1),
+    );
+    await one.moveBy(
+      const Offset(-30, 0),
+      timeStamp: const Duration(milliseconds: 10),
+    );
+    await two.moveBy(
+      const Offset(-30, 0),
+      timeStamp: const Duration(milliseconds: 20),
+    );
+    await one.cancel(timeStamp: const Duration(milliseconds: 30));
+    await two.up(timeStamp: const Duration(milliseconds: 40));
+    final cancelled = scroll.offset;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(scroll.offset, cancelled);
+
+    scroll.jumpTo(scroll.position.maxScrollExtent - 5);
+    await swipe(-25);
+    await tester.pumpAndSettle();
+    expect(scroll.offset, scroll.position.maxScrollExtent);
+    scroll.jumpTo(5);
+    await swipe(25);
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+  });
+
+  testWidgets('go to bar fits in compact landscape', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    await tester.tap(find.byTooltip('Bar menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go to bar'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '4');
+    await tester.tap(find.text('Go'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ScoreViewport>(find.byType(ScoreViewport)).selectedMeasure,
+      3,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('go to bar validates and reveals even the current bar', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    await tester.tap(find.byTooltip('Bar menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit bars'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '96');
+    await tester.tap(find.text('Add at end'));
+    await tester.pumpAndSettle();
+    expect(viewport().score.measures, hasLength(100));
+
+    Future<void> openGoToBar() async {
+      await tester.tap(find.byTooltip('Bar menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Go to bar'));
+      await tester.pumpAndSettle();
+    }
+
+    await openGoToBar();
+    for (final invalid in ['', '0', '101', 'abc']) {
+      await tester.enterText(find.byType(TextFormField), invalid);
+      await tester.tap(find.text('Go'));
+      await tester.pump();
+      expect(find.text('Enter a bar from 1 to 100.'), findsOneWidget);
+      expect(viewport().selectedMeasure, 4);
+    }
+    await tester.enterText(find.byType(TextFormField), '98');
+    await tester.tap(find.text('Go'));
+    await tester.pumpAndSettle();
+    expect(viewport().selectedMeasure, 97);
+    final scroll = tester
+        .widgetList<SingleChildScrollView>(
+          find.descendant(
+            of: find.byType(ScoreViewport),
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .singleWhere((view) => view.scrollDirection == Axis.horizontal)
+        .controller!;
+    final barX = ScorePainter.barX(viewport().score, 97, 10);
+    expect(barX, greaterThanOrEqualTo(scroll.offset));
+    expect(
+      barX + 280,
+      lessThanOrEqualTo(scroll.offset + scroll.position.viewportDimension),
+    );
+
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + Offset(barX + 30, 115));
+    await tester.pump();
+    expect(viewport().score.measures[97].events, hasLength(1));
+    scroll.jumpTo(0);
+    await tester.pump();
+    await openGoToBar();
+    await tester.tap(find.text('Go'));
+    await tester.pumpAndSettle();
+    expect(viewport().selectedMeasure, 97);
+    expect(scroll.offset, greaterThan(0));
+    expect(viewport().score.measures[97].events, hasLength(1));
+    expect(viewport().selectedEvent, isNull);
+    await openGoToBar();
+    await tester.enterText(find.byType(TextFormField), '1');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(viewport().selectedMeasure, 97);
+    await openGoToBar();
+    await tester.enterText(find.byType(TextFormField), '100');
+    await tester.tap(find.text('Go'));
+    await tester.pumpAndSettle();
+    expect(viewport().selectedMeasure, 99);
+    expect(scroll.offset, scroll.position.maxScrollExtent);
+    for (final width in [568.0, 680.0, 760.0, 900.0, 1000.0, 1060.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 320));
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'Width $width');
+      expect(find.byTooltip('Go to end'), findsOneWidget);
+    }
+    await openGoToBar();
+    await tester.enterText(find.byType(TextFormField), '1');
+    await tester.tap(find.text('Go'));
+    await tester.pumpAndSettle();
+    expect(viewport().selectedMeasure, 0);
+  });
+
   testWidgets('edit taps select a bar and select a note with its bar', (
     tester,
   ) async {

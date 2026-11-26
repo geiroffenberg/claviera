@@ -559,10 +559,9 @@ void main() {
     editor.toggleTieToPrevious(next);
 
     final plan = PlaybackPlan(editor, 120);
-    expect(
-      plan.notes.map((note) => (note.midi, note.startMs, note.endMs)),
-      [(60, 0, 1000)],
-    );
+    expect(plan.notes.map((note) => (note.midi, note.startMs, note.endMs)), [
+      (60, 0, 1000),
+    ]);
   });
 
   test(
@@ -953,6 +952,63 @@ void main() {
     restored();
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets(
+    'go to end selects the last bar and is disabled during playback',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(568, 320));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final piano = PianoPreview(
+        onError: errors.add,
+        channel: channel,
+        supported: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+      );
+      await tester.pump();
+      ScoreViewport viewport() =>
+          tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+      IconButton endButton() => tester.widget<IconButton>(
+        find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == 'Go to end',
+        ),
+      );
+      final canvas = find.byKey(const ValueKey('score-canvas'));
+      await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+      await tester.pump();
+      expect(viewport().selectedEvent, isNotNull);
+
+      await tester.tap(find.byTooltip('Go to end'));
+      await tester.pumpAndSettle();
+      expect(viewport().selectedMeasure, 3);
+      expect(viewport().selectedEvent, isNull);
+      expect(viewport().score.measures.first.events, hasLength(1));
+      expect(endButton().onPressed, isNull);
+      final scroll = tester
+          .widgetList<SingleChildScrollView>(
+            find.descendant(
+              of: find.byType(ScoreViewport),
+              matching: find.byType(SingleChildScrollView),
+            ),
+          )
+          .singleWhere((view) => view.scrollDirection == Axis.horizontal)
+          .controller!;
+      expect(scroll.offset, scroll.position.maxScrollExtent);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byTooltip('Go to start'));
+      await tester.pumpAndSettle();
+      expect(endButton().onPressed, isNotNull);
+      await tester.tap(find.byTooltip('Play score'));
+      await tester.pump();
+      expect(endButton().onPressed, isNull);
+      await tester.tap(find.byTooltip('Stop playback'));
+      await tester.pump();
+      expect(endButton().onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('play starts at selected bar and go to start resets it', (
     tester,

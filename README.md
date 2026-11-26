@@ -59,10 +59,13 @@ extracted or shared; it is not strong protection against payment bypass.
   the active voice in that bar. Each bar is numbered above its starting
   barline. In Edit mode, tap inside a bar to select it; tapping a note selects
   both the note and its bar. Changing bars does not modify the score.
+- Tap the **Bar** label and choose **Go to bar** to jump directly to an
+  existing bar. Enter its number and tap **Go**.
 - In Write mode, touch and drag vertically to preview a pitch, then release to
   append it at the green cursor, regardless of horizontal touch position. In
   Rest mode, touch the staff to append a rest. Drag with two fingers to scroll
-  the score. An entry cannot overlap a later note or an explicit rest; a note
+  the score; a quick swipe continues scrolling after release. Touch the score
+  to stop it. An entry cannot overlap a later note or an explicit rest; a note
   crossing a barline may consume generated rests in the next bar.
   Dragging between the treble and bass staves switches the note to that staff;
   chord stack keeps the selected chord's staff.
@@ -78,8 +81,9 @@ extracted or shared; it is not strong protection against payment bypass.
   note. Use the speaker button in the header to mute it. It is an experimental
   single-note preview; device latency may vary.
 - Press **Play** to play from the selected bar, or **Stop** to stop immediately.
-  Use **Go to start** beside Play to select the first bar. Notes tied in from
-  an earlier bar are silent until their next attack. Playback follows written
+  Use **Go to start** or **Go to end** beside Play to select the first or last
+  bar. Notes tied in from an earlier bar are silent until their next attack.
+  Playback follows written
   repeats, which can jump back before the selected bar.
   Playback includes all voices and chord pitches; empty space
   and rests are silent. Tap the BPM value to set a score-wide tempo from 30 to

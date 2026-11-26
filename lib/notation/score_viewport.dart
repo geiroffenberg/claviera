@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/score.dart';
@@ -10,6 +11,7 @@ class ScoreViewport extends StatefulWidget {
     required this.selectedEvent,
     required this.selectedPitch,
     this.selectedMeasure,
+    this.revealRevision = 0,
     this.cursorTick,
     this.playingSegments = const {},
     this.playingPitches = const {},
@@ -27,6 +29,7 @@ class ScoreViewport extends StatefulWidget {
   final NotationEvent? selectedEvent;
   final int selectedPitch;
   final int? selectedMeasure;
+  final int revealRevision;
   final int? cursorTick;
   final Set<PlaybackSegment> playingSegments;
   final Map<PlaybackSegment, Set<int>> playingPitches;
@@ -48,14 +51,18 @@ class _ScoreViewportState extends State<ScoreViewport> {
   final vertical = ScrollController();
   final pointers = <int, Offset>{};
   bool multiTouch = false;
+  VelocityTracker? panVelocity;
+  Offset panPosition = Offset.zero;
 
   @override
   void didUpdateWidget(covariant ScoreViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selectedMeasure != oldWidget.selectedMeasure &&
+    if ((widget.selectedMeasure != oldWidget.selectedMeasure ||
+            widget.revealRevision != oldWidget.revealRevision) &&
         widget.selectedMeasure != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !horizontal.hasClients) return;
+        horizontal.jumpTo(horizontal.offset);
         final x = ScorePainter.barX(widget.score, widget.selectedMeasure!, 10);
         final viewport = horizontal.position.viewportDimension;
         final width =
@@ -80,11 +87,20 @@ class _ScoreViewportState extends State<ScoreViewport> {
   void _down(PointerDownEvent event) {
     pointers[event.pointer] = event.position;
     if (pointers.length == 1) {
-      multiTouch = false;
-      widget.onStart?.call(event.localPosition);
-    } else {
+      final wasScrolling =
+          (horizontal.hasClients &&
+              horizontal.position.isScrollingNotifier.value) ||
+          (vertical.hasClients && vertical.position.isScrollingNotifier.value);
+      if (horizontal.hasClients) horizontal.jumpTo(horizontal.offset);
+      if (vertical.hasClients) vertical.jumpTo(vertical.offset);
+      multiTouch = wasScrolling;
+      if (!multiTouch) widget.onStart?.call(event.localPosition);
+    } else if (pointers.length == 2) {
       multiTouch = true;
       widget.onCancel?.call();
+      panPosition = Offset.zero;
+      panVelocity = VelocityTracker.withKind(event.kind)
+        ..addPosition(event.timeStamp, panPosition);
     }
   }
 
@@ -94,8 +110,11 @@ class _ScoreViewportState extends State<ScoreViewport> {
     pointers[event.pointer] = event.position;
     if (multiTouch) {
       if (pointers.length >= 2) {
-        _scroll(horizontal, -delta.dx / pointers.length);
-        _scroll(vertical, -delta.dy / pointers.length);
+        final movement = delta / pointers.length.toDouble();
+        panPosition += movement;
+        panVelocity?.addPosition(event.timeStamp, panPosition);
+        _scroll(horizontal, -movement.dx);
+        _scroll(vertical, -movement.dy);
       }
     } else {
       widget.onUpdate?.call(event.localPosition);
@@ -115,7 +134,28 @@ class _ScoreViewportState extends State<ScoreViewport> {
   void _up(PointerUpEvent event) {
     pointers.remove(event.pointer);
     if (!multiTouch) widget.onEnd?.call(event.localPosition);
-    if (pointers.isEmpty) multiTouch = false;
+    if (multiTouch) panVelocity?.addPosition(event.timeStamp, panPosition);
+    if (pointers.isEmpty) {
+      final velocity =
+          panVelocity?.getVelocity().pixelsPerSecond ?? Offset.zero;
+      _fling(horizontal, -velocity.dx);
+      _fling(vertical, -velocity.dy);
+      panVelocity = null;
+      multiTouch = false;
+    }
+  }
+
+  void _fling(ScrollController controller, double velocity) {
+    if (!controller.hasClients) return;
+    final position = controller.position;
+    final physics = position.physics;
+    if (velocity.abs() < physics.minFlingVelocity) return;
+    if (position is! ScrollPositionWithSingleContext) {
+      throw StateError('Score scrolling requires a single-context position.');
+    }
+    position.goBallistic(
+      velocity.clamp(-physics.maxFlingVelocity, physics.maxFlingVelocity),
+    );
   }
 
   @override
@@ -134,11 +174,15 @@ class _ScoreViewportState extends State<ScoreViewport> {
         controller: horizontal,
         child: SingleChildScrollView(
           controller: horizontal,
-          physics: const NeverScrollableScrollPhysics(),
+          physics: const NeverScrollableScrollPhysics(
+            parent: ClampingScrollPhysics(),
+          ),
           scrollDirection: Axis.horizontal,
           child: SingleChildScrollView(
             controller: vertical,
-            physics: const NeverScrollableScrollPhysics(),
+            physics: const NeverScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
             child: Listener(
               key: const ValueKey('score-canvas'),
               behavior: HitTestBehavior.opaque,
@@ -147,6 +191,7 @@ class _ScoreViewportState extends State<ScoreViewport> {
               onPointerUp: _up,
               onPointerCancel: (event) {
                 pointers.remove(event.pointer);
+                panVelocity = null;
                 widget.onCancel?.call();
                 if (pointers.isEmpty) multiTouch = false;
               },

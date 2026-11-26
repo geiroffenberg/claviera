@@ -60,6 +60,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
   bool chordStack = false;
   int? selectedId;
   int selectedMeasure = 0;
+  int revealRevision = 0;
   bool replaceSelectedRest = false;
   int pitchIndex = 0;
   Pitch? preview;
@@ -945,6 +946,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
+                icon: const Icon(Icons.search),
+                label: const Text('Go to bar'),
+                onPressed: () => Navigator.pop(context, 'goTo'),
+              ),
+              OutlinedButton.icon(
                 icon: const Icon(Icons.speed),
                 label: const Text('Tempo'),
                 onPressed: () => Navigator.pop(context, 'tempo'),
@@ -991,7 +997,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       ),
     );
     if (!mounted) return;
-    if (choice == 'tempo') {
+    if (choice == 'goTo') {
+      await _goToBar();
+    } else if (choice == 'tempo') {
       await _setBarTempo(measure);
     } else if (choice == 'signatures') {
       await _scoreSettings(measure: measure == 0 ? null : measure);
@@ -1006,6 +1014,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     } else if (choice == 'edit') {
       await _editBars(measure);
     }
+  }
+
+  Future<void> _goToBar() async {
+    var input = '${selectedMeasure + 1}';
+    String? error;
+    final bar = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          void go() {
+            final number = int.tryParse(input);
+            if (number == null || number < 1 || number > editor.measureCount) {
+              update(
+                () => error = 'Enter a bar from 1 to ${editor.measureCount}.',
+              );
+              return;
+            }
+            Navigator.pop(context, number - 1);
+          }
+
+          return AlertDialog(
+            title: const Text('Go to bar'),
+            content: TextFormField(
+              initialValue: input,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              onChanged: (value) => input = value,
+              onFieldSubmitted: (_) => go(),
+              decoration: InputDecoration(
+                labelText: 'Bar number (1–${editor.measureCount})',
+                errorText: error,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(onPressed: go, child: const Text('Go')),
+            ],
+          );
+        },
+      ),
+    );
+    if (mounted && bar != null) _selectMeasure(bar, reveal: true);
   }
 
   Future<void> _voiceSwitch(int measure) async {
@@ -1521,9 +1574,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
   });
 
-  void _selectMeasure(int measure) => setState(() {
+  void _selectMeasure(int measure, {bool reveal = false}) => setState(() {
     piano.stop();
     selectedMeasure = measure;
+    if (reveal) revealRevision++;
     selectedId = null;
     pitchIndex = 0;
     replaceSelectedRest = false;
@@ -2494,135 +2548,180 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                             Container(
                               height: 40,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
+                                horizontal: 8,
                               ),
                               color: const Color(0xffedf1ed),
                               child: LayoutBuilder(
-                                builder: (context, constraints) => Row(
-                                  children: [
-                                    if (constraints.maxWidth >= 450) ...[
-                                      const Text(
-                                        'CLAVIERA',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 1.4,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                    ],
-                                    Expanded(
-                                      child: Text(
-                                        projectName,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Go to start',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.skip_previous),
-                                      onPressed: !playing && selectedMeasure > 0
-                                          ? () => _selectMeasure(0)
-                                          : null,
-                                    ),
-                                    IconButton(
-                                      tooltip: playing
-                                          ? 'Stop playback'
-                                          : 'Play score',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: Icon(
-                                        playing ? Icons.stop : Icons.play_arrow,
-                                      ),
-                                      onPressed: playing
-                                          ? _stopScore
-                                          : _playScore,
-                                    ),
-                                    TextButton(
-                                      onPressed: playing ? null : _setTempo,
-                                      style: TextButton.styleFrom(
-                                        padding: EdgeInsets.zero,
-                                        minimumSize: const Size(55, 36),
-                                      ),
-                                      child: Text('$tempo BPM'),
-                                    ),
-                                    IconButton(
-                                      tooltip: piano.enabled
-                                          ? 'Mute piano preview'
-                                          : 'Enable piano preview',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: Icon(
-                                        piano.enabled
-                                            ? Icons.volume_up
-                                            : Icons.volume_off,
-                                      ),
-                                      onPressed: () => setState(
-                                        () => piano.setEnabled(!piano.enabled),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Previous bar',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.chevron_left),
-                                      onPressed: !playing && selectedMeasure > 0
-                                          ? () => _selectMeasure(
-                                              selectedMeasure - 1,
-                                            )
-                                          : null,
-                                    ),
-                                    Tooltip(
-                                      message: 'Bar menu',
-                                      child: TextButton(
-                                        onPressed: playing
-                                            ? null
-                                            : () =>
-                                                  _barSettings(selectedMeasure),
-                                        style: TextButton.styleFrom(
-                                          minimumSize: Size.zero,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 2,
-                                            vertical: 8,
+                                builder: (context, constraints) {
+                                  final density = constraints.maxWidth < 520
+                                      ? const VisualDensity(
+                                          horizontal: -4,
+                                          vertical: -2,
+                                        )
+                                      : VisualDensity.compact;
+                                  final iconPadding = constraints.maxWidth < 520
+                                      ? const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                          vertical: 8,
+                                        )
+                                      : null;
+                                  return Row(
+                                    children: [
+                                      if (constraints.maxWidth >= 650) ...[
+                                        const Text(
+                                          'CLAVIERA',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 1.4,
                                           ),
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
                                         ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Bar ${(playbackFrame?.measure ?? selectedMeasure) + 1}',
-                                            ),
-                                            const Icon(
-                                              Icons.arrow_drop_down,
-                                              size: 16,
-                                            ),
-                                          ],
+                                        const SizedBox(width: 14),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          projectName,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Next bar',
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.chevron_right),
-                                      onPressed:
-                                          !playing &&
-                                              selectedMeasure + 1 <
-                                                  score.measures.length
-                                          ? () => _selectMeasure(
-                                              selectedMeasure + 1,
-                                            )
-                                          : null,
-                                    ),
-                                    if (constraints.maxWidth >= 800)
-                                      Text(
-                                        mode == WorkspaceMode.write
-                                            ? 'WRITE · 2 FINGERS TO SCROLL'
-                                            : 'EDIT · TAP TO SELECT',
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
+                                      IconButton(
+                                        tooltip: 'Go to start',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: const Icon(Icons.skip_previous),
+                                        onPressed:
+                                            !playing && selectedMeasure > 0
+                                            ? () => _selectMeasure(0)
+                                            : null,
+                                      ),
+                                      IconButton(
+                                        tooltip: playing
+                                            ? 'Stop playback'
+                                            : 'Play score',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: Icon(
+                                          playing
+                                              ? Icons.stop
+                                              : Icons.play_arrow,
+                                        ),
+                                        onPressed: playing
+                                            ? _stopScore
+                                            : _playScore,
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Go to end',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: const Icon(Icons.skip_next),
+                                        onPressed:
+                                            !playing &&
+                                                selectedMeasure + 1 <
+                                                    score.measures.length
+                                            ? () => _selectMeasure(
+                                                score.measures.length - 1,
+                                              )
+                                            : null,
+                                      ),
+                                      TextButton(
+                                        onPressed: playing ? null : _setTempo,
+                                        style: TextButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: const Size(55, 36),
+                                        ),
+                                        child: Text('$tempo BPM'),
+                                      ),
+                                      IconButton(
+                                        tooltip: piano.enabled
+                                            ? 'Mute piano preview'
+                                            : 'Enable piano preview',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: Icon(
+                                          piano.enabled
+                                              ? Icons.volume_up
+                                              : Icons.volume_off,
+                                        ),
+                                        onPressed: () => setState(
+                                          () =>
+                                              piano.setEnabled(!piano.enabled),
                                         ),
                                       ),
-                                  ],
-                                ),
+                                      IconButton(
+                                        tooltip: 'Previous bar',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: const Icon(Icons.chevron_left),
+                                        onPressed:
+                                            !playing && selectedMeasure > 0
+                                            ? () => _selectMeasure(
+                                                selectedMeasure - 1,
+                                              )
+                                            : null,
+                                      ),
+                                      Tooltip(
+                                        message: 'Bar menu',
+                                        child: TextButton(
+                                          onPressed: playing
+                                              ? null
+                                              : () => _barSettings(
+                                                  selectedMeasure,
+                                                ),
+                                          style: TextButton.styleFrom(
+                                            minimumSize: Size.zero,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 2,
+                                              vertical: 8,
+                                            ),
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Bar ${(playbackFrame?.measure ?? selectedMeasure) + 1}',
+                                                style:
+                                                    constraints.maxWidth < 520
+                                                    ? const TextStyle(
+                                                        fontSize: 12,
+                                                      )
+                                                    : null,
+                                              ),
+                                              const Icon(
+                                                Icons.arrow_drop_down,
+                                                size: 16,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Next bar',
+                                        visualDensity: density,
+                                        padding: iconPadding,
+                                        icon: const Icon(Icons.chevron_right),
+                                        onPressed:
+                                            !playing &&
+                                                selectedMeasure + 1 <
+                                                    score.measures.length
+                                            ? () => _selectMeasure(
+                                                selectedMeasure + 1,
+                                              )
+                                            : null,
+                                      ),
+                                      if (constraints.maxWidth >= 900)
+                                        Text(
+                                          mode == WorkspaceMode.write
+                                              ? 'WRITE · 2 FINGERS TO SCROLL'
+                                              : 'EDIT · TAP TO SELECT',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                             Expanded(
@@ -2636,6 +2735,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                   selectedPitch: pitchIndex,
                                   selectedMeasure:
                                       playbackFrame?.measure ?? selectedMeasure,
+                                  revealRevision: revealRevision,
                                   cursorTick: playing ? null : cursor,
                                   playingSegments:
                                       playbackFrame?.segments ?? const {},

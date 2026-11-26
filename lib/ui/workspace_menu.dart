@@ -203,7 +203,8 @@ Future<void> showGettingStarted(BuildContext context) async {
       ],
       'Voices and moving around',
       'V1 to V4 choose the voice you write in. Use the arrows to move '
-          'between notes, and the Bar arrows to choose where to write. Drag '
+          'between notes, and the Bar arrows to choose where to write. Tap '
+          'Bar and choose Go to bar to jump directly to a bar. Drag or swipe '
           'the score with two fingers to scroll.',
     ),
     (
@@ -216,11 +217,13 @@ Future<void> showGettingStarted(BuildContext context) async {
       [
         _iconChip(Icons.play_arrow),
         _iconChip(Icons.skip_previous),
+        _iconChip(Icons.skip_next),
         _iconChip(Icons.speed),
       ],
       'Play',
       'Play starts at the selected bar. Use Go to start beside Play to '
-          'return to the beginning. Tap BPM to set tempo.',
+          'return to the beginning or Go to end to select the last bar. '
+          'Tap BPM to set tempo.',
     ),
     (
       [_labelChip('\uE050', music: true), _labelChip('4/4')],
