@@ -294,3 +294,5 @@ and score notes stop; score notes fade during their final 10 ms.
 Menu > Reverb controls the score playback room reverb:
 enable it or adjust its level, feedback/decay, damping and maximum tail length.
 Settings are saved for future playback. The single-note preview remains dry.
+Score playback applies a fixed gain per score based on simultaneous sample
+peaks, keeping written dynamics while reducing the risk of clipping chords.

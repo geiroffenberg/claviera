@@ -127,7 +127,33 @@ class PianoScoreMixerTest {
         )
         val output = FloatArray(4)
         assertEquals(4, mixer.read(output))
-        assertArrayEquals(floatArrayOf(0f, 0.5f * 64 / 127, 0f, 0f), output, 0.00001f)
+        assertArrayEquals(floatArrayOf(0f, 0.5f * 64 / 127 * 2, 0f, 0f), output, 0.00001f)
+    }
+
+    @Test
+    fun quieterSamplesAreAmplifiedWithoutClippingChords() {
+        val samples = mapOf(60 to PianoSample(1000, FloatArray(100) { 0.2f }))
+        val solo = PianoScoreMixer(samples, listOf(PianoNote(60, 0, 100, 127)), 1000, wet = 0f)
+        val soloOutput = FloatArray(100)
+        solo.read(soloOutput)
+        assertEquals(0.4f, soloOutput[0], 0.00001f)
+
+        val chord = PianoScoreMixer(samples, List(8) { PianoNote(60, 0, 100, 127) }, 1000, wet = 0f)
+        val chordOutput = FloatArray(100)
+        chord.read(chordOutput)
+        assertEquals(1f, chordOutput[0], 0.00001f)
+        assertTrue(chordOutput.all { abs(it) <= 1f })
+    }
+
+    @Test
+    fun gainRemainsConstantAcrossNotesWithDifferentDynamics() {
+        val samples = mapOf(60 to PianoSample(1000, FloatArray(200) { 0.2f }))
+        val notes = listOf(PianoNote(60, 0, 100, 127), PianoNote(60, 100, 200, 64))
+        val mixer = PianoScoreMixer(samples, notes, 1000, wet = 0f)
+        val output = FloatArray(200)
+        mixer.read(output)
+        assertEquals(0.4f, output[0], 0.00001f)
+        assertEquals(0.4f * 64 / 127, output[100], 0.00001f)
     }
 
     @Test

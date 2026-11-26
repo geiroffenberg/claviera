@@ -27,8 +27,12 @@ internal class PianoScoreMixer(
         val sample: PianoSample,
         val step: Double,
         val volume: Float,
+        val peak: Float,
     )
 
+    private val samplePeaks = samples.mapValues { (_, sample) ->
+        sample.frames.fold(0f) { peak, frame -> maxOf(peak, abs(frame)) }
+    }
     private val scheduled = notes.map { note ->
         val root = samples.keys.minBy { abs(it - note.midi) }
         val sample = samples.getValue(root)
@@ -38,6 +42,7 @@ internal class PianoScoreMixer(
             sample,
             sample.sampleRate.toDouble() / sampleRate * 2.0.pow((note.midi - root) / 12.0),
             note.volume / 127f,
+            samplePeaks.getValue(root) * (note.volume / 127f),
         )
     }.sortedBy { it.start }
     private val active = mutableListOf<Note>()
@@ -51,16 +56,16 @@ internal class PianoScoreMixer(
     private val releaseFrames = maxOf(1, sampleRate * 10 / 1000)
 
     init {
-        // One constant gain for the score preserves dynamics without clipping chords.
-        val changes = scheduled.flatMap { listOf(it.start to it.volume, it.end to -it.volume) }
+        // Bound simultaneous sample peaks with one gain to preserve score dynamics.
+        val changes = scheduled.flatMap { listOf(it.start to it.peak, it.end to -it.peak) }
             .sortedWith(compareBy<Pair<Long, Float>> { it.first }.thenBy { it.second })
         var level = 0f
-        var peak = 1f
+        var peak = 0f
         for ((_, change) in changes) {
             level += change
             peak = maxOf(peak, level)
         }
-        gain = 1f / peak
+        gain = if (peak > 0f) minOf(2f, 1f / peak) else 1f
     }
 
     fun read(output: FloatArray): Int {
