@@ -953,6 +953,65 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('stopping playback selects the current bar for the next play', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final piano = PianoPreview(
+      onError: errors.add,
+      channel: channel,
+      supported: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: WorkspaceScreen(pianoPreview: piano)),
+    );
+    Future<void> addNote(double y) async {
+      await tester.tapAt(
+        tester.getTopLeft(find.byType(ScoreViewport)) + Offset(160, y),
+      );
+      await tester.pump();
+    }
+
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    await addNote(115);
+    await tester.tap(find.byTooltip('Next bar'));
+    await tester.pumpAndSettle();
+    await addNote(105);
+    await tester.tap(find.byTooltip('Previous bar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    final canvas = find.byKey(const ValueKey('score-canvas'));
+    await tester.tapAt(tester.getTopLeft(canvas) + const Offset(160, 115));
+    await tester.pump();
+    expect(viewport().selectedEvent, isNotNull);
+
+    await tester.tap(find.byTooltip('Play score'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2000));
+    expect(viewport().selectedMeasure, 1);
+    await tester.tap(find.byTooltip('Stop playback'));
+    await tester.pump();
+    expect(viewport().selectedMeasure, 1);
+    expect(viewport().selectedEvent, isNull);
+    expect(find.text('Bar 2'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Play score'));
+    await tester.pump();
+    await tester.pump();
+    final payload = calls.lastWhere((call) => call.method == 'playScore');
+    final notes = (payload.arguments as Map)['notes'] as List;
+    expect(notes, hasLength(1));
+    expect((notes.single as Map)['startMs'], 0);
+    expect(viewport().selectedMeasure, 1);
+    await tester.tap(find.byTooltip('Stop playback'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'go to end selects the last bar and is disabled during playback',
     (tester) async {

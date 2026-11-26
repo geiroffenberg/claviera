@@ -873,6 +873,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
 
   void _stopScore() {
     piano.stopScore();
+    final measure = playbackFrame?.measure;
+    if (measure != null && measure != selectedMeasure) {
+      _selectMeasure(measure);
+    }
     _finishPlayback();
   }
 
