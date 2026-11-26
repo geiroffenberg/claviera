@@ -289,4 +289,5 @@ their notated duration; highlighting follows the notated duration. SoundPool
 timing and pitch-shifted samples are provisional; playback supports at most 64
 simultaneous notes. The sample engine supports MIDI notes 10–127.
 Score playback briefly prepares the audio output before starting, to reduce
-first-note delays on Android.
+first-note delays on Android. Short release fades reduce clicks when preview
+and score notes stop.

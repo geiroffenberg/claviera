@@ -44,20 +44,39 @@ class PianoScoreMixerTest {
         val mixer = PianoScoreMixer(
             mapOf(60 to PianoSample(1000, FloatArray(1000) { 1f })),
             listOf(
-                PianoNote(60, 10, 30, 127),
-                PianoNote(60, 20, 40, 127),
-                PianoNote(60, 50, 60, 127),
+                PianoNote(60, 10, 70, 127),
+                PianoNote(60, 30, 90, 127),
+                PianoNote(60, 100, 140, 127),
             ),
             1000,
         )
-        val output = FloatArray(60)
-        assertEquals(60, mixer.read(output))
+        val output = FloatArray(140)
+        assertEquals(140, mixer.read(output))
         assertTrue(output.slice(0 until 10).all { it == 0f })
-        assertTrue(output.slice(10 until 20).all { it == 0.5f })
-        assertTrue(output.slice(20 until 30).all { it == 1f })
-        assertTrue(output.slice(30 until 40).all { it == 0.5f })
-        assertTrue(output.slice(40 until 50).all { it == 0f })
-        assertTrue(output.slice(50 until 60).all { it == 0.5f })
+        assertTrue(output.slice(10 until 30).all { it == 0.5f })
+        assertTrue(output.slice(30 until 50).all { it == 1f })
+        assertEquals(0.5f, output[69], 0.00001f)
+        assertEquals(0.475f, output[70], 0.00001f)
+        assertEquals(0f, output[89], 0.00001f)
+        assertTrue(output.slice(90 until 100).all { it == 0f })
+        assertTrue(output.slice(100 until 120).all { it == 0.5f })
+        assertEquals(0f, output[139], 0.00001f)
+    }
+
+    @Test
+    fun releaseFadesToSilenceEvenForShortNotes() {
+        val mixer = PianoScoreMixer(
+            mapOf(60 to PianoSample(1000, FloatArray(100) { 1f })),
+            listOf(PianoNote(60, 0, 40, 127), PianoNote(60, 50, 55, 127)),
+            1000,
+        )
+        val output = FloatArray(55)
+        assertEquals(55, mixer.read(output))
+        assertEquals(1f, output[19], 0.00001f)
+        assertEquals(0.95f, output[20], 0.00001f)
+        assertEquals(0f, output[39], 0.00001f)
+        assertEquals(0.8f, output[50], 0.00001f)
+        assertEquals(0f, output[54], 0.00001f)
     }
 
     @Test
@@ -82,7 +101,7 @@ class PianoScoreMixerTest {
     fun sampleRateConversionAndQuietNotesRetainTheirValues() {
         val mixer = PianoScoreMixer(
             mapOf(60 to PianoSample(2000, floatArrayOf(0f, 0.25f, 0.5f, 0.75f))),
-            listOf(PianoNote(60, 0, 4, 64)),
+            listOf(PianoNote(60, 0, 30, 64)),
             1000,
         )
         val output = FloatArray(4)

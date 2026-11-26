@@ -41,6 +41,7 @@ internal class PianoScoreMixer(
     private var position = 0L
     private val end = scheduled.maxOfOrNull { it.end } ?: 0L
     private val gain: Float
+    private val releaseFrames = maxOf(1, sampleRate * 20 / 1000)
 
     init {
         // One constant gain for the score preserves dynamics without clipping chords.
@@ -67,6 +68,7 @@ internal class PianoScoreMixer(
         for (note in active) {
             val start = maxOf(position, note.start)
             val stop = minOf(blockEnd, note.end)
+            val release = minOf(releaseFrames.toLong(), note.end - note.start)
             for (frame in start until stop) {
                 val source = (frame - note.start) * note.step
                 if (source >= note.sample.frames.size) break
@@ -74,8 +76,9 @@ internal class PianoScoreMixer(
                 val fraction = (source - index).toFloat()
                 val first = note.sample.frames[index]
                 val second = note.sample.frames.getOrElse(index + 1) { 0f }
+                val envelope = minOf(1f, (note.end - 1 - frame).toFloat() / release)
                 output[(frame - position).toInt()] +=
-                    (first + (second - first) * fraction) * note.volume * gain
+                    (first + (second - first) * fraction) * note.volume * gain * envelope
             }
         }
         for (i in 0 until count) output[i] = output[i].coerceIn(-1f, 1f)

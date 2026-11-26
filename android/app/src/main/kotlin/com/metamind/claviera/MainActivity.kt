@@ -428,7 +428,7 @@ class MainActivity : FlutterActivity() {
         stopScore()
         pendingStop?.let(handler::removeCallbacks)
         pendingStop = null
-        if (stream != 0) pool?.stop(stream)
+        fadePreview()
         stream = 0
         scorePlayer.play(notes.map {
             PianoNote(it.getValue("midi"), it.getValue("startMs"), it.getValue("endMs"), it.getValue("volume"))
@@ -453,7 +453,7 @@ class MainActivity : FlutterActivity() {
         }
         pendingStop?.let(handler::removeCallbacks)
         pendingStop = null
-        if (stream != 0) soundPool.stop(stream)
+        fadePreview()
         stream = soundPool.play(samples.getValue(root), 1f, 1f, 1, 0, rate)
         if (stream == 0) {
             result.error("play_failed", "Unable to play the piano preview.", null)
@@ -467,12 +467,33 @@ class MainActivity : FlutterActivity() {
         pendingStop?.let(handler::removeCallbacks)
         val delay = (150 - (SystemClock.uptimeMillis() - startedAt)).coerceAtLeast(0)
         val stop = Runnable {
-            if (stream != 0) pool?.stop(stream)
+            fadePreview()
             stream = 0
             pendingStop = null
         }
         pendingStop = stop
         handler.postDelayed(stop, delay)
+    }
+
+    private fun fadePreview() {
+        val soundPool = pool ?: return
+        val fadingStream = stream
+        if (fadingStream == 0) return
+        val started = SystemClock.uptimeMillis()
+        val fade = object : Runnable {
+            override fun run() {
+                if (pool !== soundPool) return
+                val elapsed = SystemClock.uptimeMillis() - started
+                if (elapsed >= 30) {
+                    soundPool.stop(fadingStream)
+                } else {
+                    val volume = 1f - elapsed / 30f
+                    soundPool.setVolume(fadingStream, volume, volume)
+                    handler.postDelayed(this, 5)
+                }
+            }
+        }
+        handler.post(fade)
     }
 
     override fun onPause() {
