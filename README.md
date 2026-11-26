@@ -281,10 +281,10 @@ Ads and clef changes per bar are not implemented. The remaining disabled menu
 items are placeholders. Bravura is distributed under the license in
 `assets/fonts/LICENSE-Bravura.txt`.
 
-The Android preview and experimental playback use SoundPool and a small set of CC0 Steinway B samples
-derived from the Versilian Community Sample Library. See the accompanying
+The Android preview and experimental playback use SoundPool and a small set of CC0 Meta Piano samples
+(an upright piano). See the accompanying
 `android/app/src/main/assets/piano/README.txt` for sources and processing.
-Samples are at most three seconds long, so longer held notes decay or end before
+Samples are at most four seconds long, so longer held notes decay or end before
 their notated duration; highlighting follows the notated duration. SoundPool
 timing and pitch-shifted samples are provisional; playback supports at most 64
 simultaneous notes. The sample engine supports MIDI notes 10–127.

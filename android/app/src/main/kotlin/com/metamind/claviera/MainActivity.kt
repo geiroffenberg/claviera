@@ -20,7 +20,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 
 class MainActivity : FlutterActivity() {
-    private val roots = listOf(22, 34, 46, 58, 70, 82, 94, 104, 116, 127)
+    private val roots = (21..108 step 3).toList() + 120
     private val samples = mutableMapOf<Int, Int>()
     private val handler = Handler(Looper.getMainLooper())
     private var pool: SoundPool? = null

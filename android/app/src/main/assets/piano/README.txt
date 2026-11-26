@@ -1,18 +1,14 @@
-Piano preview samples: Steinway B, Versilian Community Sample Library (VCSL).
+Piano preview samples: Meta Piano, an upright piano recorded by Meta's Creative
+Audio team.
 License: CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/
-Original library: https://github.com/sgossner/VCSL
-Source: https://github.com/StanislavMakhnytskyi/stapiano-samples
-Revision: 49685600cd66448c637a25be08d6041ce620f065
-Source folder: steinway-b, medium-velocity (v2) samples, MIDI roots 22, 34, 46,
-58, 70, 82, 94, 104. The source recordings were trimmed, gain-adjusted and
-encoded as described in the source repository's README and LICENSE.
+Original library: https://github.com/facebookincubator/Meta-open-sound
+(systems/instruments/meta-piano), velocity layer 3 (mf).
 
-For Claviera the samples were truncated to three seconds, faded out over the
-last 0.2 seconds and re-encoded as mono AAC. The 116 and 127 samples were
-derived by speeding up the 104 sample, first by an octave and then by
-approximately 11 semitones, respectively. To soften the tone, each root was
-low-passed (2-pole; 7 kHz up to root 82, 5.5 kHz for 94 and 104, 4.5 kHz for 116
-and 127), then gain-adjusted so its first second measures about -28 LUFS
-(EBU R128; -30 for 94 and 104, -32 for 116 and 127), keeping peaks below
--3 dBFS, and re-encoded at 96 kbit/s. Playback shifts the nearest root.
-The reduced set is intended only as a lightweight prototype.
+For Claviera one sample was kept for every third note (MIDI 21, 24, ..., 108),
+resampled to 44.1 kHz mono, with leading silence removed, truncated to four
+seconds and faded out over the last 0.3 seconds. The 120 sample was derived by
+speeding up the 108 sample by an octave. Roots from 84 up were low-passed
+(2-pole, 7 kHz) to soften the tone. Each root was gain-adjusted so its first
+second measures about -28 LUFS (EBU R128), keeping peaks below -3 dBFS, and
+re-encoded as AAC at 96 kbit/s. Playback shifts the nearest root by at most
+one or two semitones.
