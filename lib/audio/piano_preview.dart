@@ -13,6 +13,8 @@ class PianoPreview {
     if (_supported) _channel.setMethodCallHandler(_handleNativeCall);
   }
 
+  static const _scoreTail = Duration(milliseconds: 1500);
+
   final void Function(String message) onError;
   final MethodChannel _channel;
   final bool _supported;
@@ -23,6 +25,7 @@ class PianoPreview {
   bool _disposed = false;
   bool _failed = false;
   Timer? _playbackTimer;
+  DateTime? _tailEndsAt;
   bool _playingScore = false;
   void Function()? _onPlaybackFinished;
 
@@ -122,7 +125,11 @@ class PianoPreview {
       if (_disposed || revision != _revision) return false;
       _playbackTimer = Timer(Duration(milliseconds: plan.durationMs), () {
         if (_disposed || revision != _revision) return;
-        stopScore();
+        // The native player ends on its own so the reverb tail keeps ringing.
+        _playingScore = false;
+        _revision++;
+        _playbackTimer = null;
+        _tailEndsAt = DateTime.now().add(_scoreTail);
         _onPlaybackFinished = null;
         onFinished();
       });
@@ -142,7 +149,9 @@ class PianoPreview {
   }
 
   void stopScore() {
-    if (!_playingScore) return;
+    final ringing = _tailEndsAt?.isAfter(DateTime.now()) ?? false;
+    if (!_playingScore && !ringing) return;
+    _tailEndsAt = null;
     _playingScore = false;
     _revision++;
     _playbackTimer?.cancel();

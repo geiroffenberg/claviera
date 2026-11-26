@@ -290,4 +290,5 @@ timing and pitch-shifted samples are provisional; playback supports at most 64
 simultaneous notes. The sample engine supports MIDI notes 10–127.
 Score playback briefly prepares the audio output before starting, to reduce
 first-note delays on Android. Short release fades reduce clicks when preview
-and score notes stop.
+and score notes stop. Score playback adds a light room reverb whose tail rings for
+up to 1.5 seconds after the last note; the single-note preview is dry.

@@ -16,6 +16,8 @@ internal class PianoScoreMixer(
     samples: Map<Int, PianoSample>,
     notes: List<PianoNote>,
     val sampleRate: Int = 44100,
+    wet: Float = 0.3f,
+    tailMs: Int = 1500,
 ) {
     private data class Note(
         val start: Long,
@@ -39,7 +41,10 @@ internal class PianoScoreMixer(
     private val active = mutableListOf<Note>()
     private var next = 0
     private var position = 0L
-    private val end = scheduled.maxOfOrNull { it.end } ?: 0L
+    private val notesEnd = scheduled.maxOfOrNull { it.end } ?: 0L
+    private val reverb = if (wet > 0f) Reverb(sampleRate, wet) else null
+    // The reverb keeps ringing after the last note stops.
+    val totalFrames = notesEnd + if (reverb != null) tailMs.toLong() * sampleRate / 1000 else 0L
     private val gain: Float
     private val releaseFrames = maxOf(1, sampleRate * 20 / 1000)
 
@@ -57,7 +62,7 @@ internal class PianoScoreMixer(
     }
 
     fun read(output: FloatArray): Int {
-        val count = minOf(output.size.toLong(), end - position).toInt()
+        val count = minOf(output.size.toLong(), totalFrames - position).toInt()
         if (count == 0) return 0
         output.fill(0f)
         val blockEnd = position + count
@@ -81,8 +86,58 @@ internal class PianoScoreMixer(
                     (first + (second - first) * fraction) * note.volume * gain * envelope
             }
         }
-        for (i in 0 until count) output[i] = output[i].coerceIn(-1f, 1f)
+        for (i in 0 until count) {
+            val mixed = reverb?.let { output[i] + it.process(output[i]) } ?: output[i]
+            output[i] = mixed.coerceIn(-1f, 1f)
+        }
         position = blockEnd
         return count
+    }
+}
+
+// Small Freeverb-style room: parallel damped combs feeding series allpasses.
+private class Reverb(sampleRate: Int, private val wet: Float) {
+    private class Comb(size: Int) {
+        private val buffer = FloatArray(size)
+        private var index = 0
+        private var store = 0f
+
+        fun process(input: Float): Float {
+            val output = buffer[index]
+            store = output * (1 - DAMP) + store * DAMP
+            buffer[index] = input + store * FEEDBACK
+            index = (index + 1) % buffer.size
+            return output
+        }
+    }
+
+    private class Allpass(size: Int) {
+        private val buffer = FloatArray(size)
+        private var index = 0
+
+        fun process(input: Float): Float {
+            val buffered = buffer[index]
+            buffer[index] = input + buffered * 0.5f
+            index = (index + 1) % buffer.size
+            return buffered - input
+        }
+    }
+
+    private val combs = COMB_SIZES.map { Comb(maxOf(1, (it * sampleRate / 44100.0).toInt())) }
+    private val allpasses = ALLPASS_SIZES.map { Allpass(maxOf(1, (it * sampleRate / 44100.0).toInt())) }
+
+    fun process(input: Float): Float {
+        val scaled = input * 0.015f
+        var sum = 0f
+        for (comb in combs) sum += comb.process(scaled)
+        for (allpass in allpasses) sum = allpass.process(sum)
+        return sum * wet
+    }
+
+    private companion object {
+        const val FEEDBACK = 0.78f
+        const val DAMP = 0.4f
+        val COMB_SIZES = intArrayOf(1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617)
+        val ALLPASS_SIZES = intArrayOf(556, 441, 341, 225)
     }
 }

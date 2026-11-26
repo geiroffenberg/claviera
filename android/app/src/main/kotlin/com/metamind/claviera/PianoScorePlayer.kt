@@ -64,7 +64,7 @@ internal class PianoScorePlayer(
             try {
                 if (samples.size != roots.size) throw IOException("Piano samples are not ready.")
                 val mixer = PianoScoreMixer(samples, notes)
-                val totalFrames = notes.maxOf { it.endMs.toLong() * mixer.sampleRate / 1000 }
+                val totalFrames = mixer.totalFrames
                 val attributes = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)

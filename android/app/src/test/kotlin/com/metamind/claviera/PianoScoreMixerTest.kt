@@ -21,6 +21,7 @@ class PianoScoreMixerTest {
             mapOf(60 to sample),
             pitches.map { PianoNote(it, 0, 500, 127) },
             rate,
+            wet = 0f,
         )
         val output = FloatArray(rate / 2)
         assertEquals(output.size, mixer.read(output))
@@ -49,6 +50,7 @@ class PianoScoreMixerTest {
                 PianoNote(60, 100, 140, 127),
             ),
             1000,
+            wet = 0f,
         )
         val output = FloatArray(140)
         assertEquals(140, mixer.read(output))
@@ -69,6 +71,7 @@ class PianoScoreMixerTest {
             mapOf(60 to PianoSample(1000, FloatArray(100) { 1f })),
             listOf(PianoNote(60, 0, 40, 127), PianoNote(60, 50, 55, 127)),
             1000,
+            wet = 0f,
         )
         val output = FloatArray(55)
         assertEquals(55, mixer.read(output))
@@ -84,8 +87,8 @@ class PianoScoreMixerTest {
         val notes = listOf(PianoNote(67, 13, 57, 64), PianoNote(60, 30, 70, 127))
         val samples = mapOf(60 to PianoSample(1000, FloatArray(100) { sin(it.toDouble()).toFloat() }))
         val whole = FloatArray(70)
-        PianoScoreMixer(samples, notes, 1000).read(whole)
-        val mixer = PianoScoreMixer(samples, notes, 1000)
+        PianoScoreMixer(samples, notes, 1000, wet = 0f).read(whole)
+        val mixer = PianoScoreMixer(samples, notes, 1000, wet = 0f)
         val chunks = mutableListOf<Float>()
         val buffer = FloatArray(7)
         while (true) {
@@ -103,9 +106,30 @@ class PianoScoreMixerTest {
             mapOf(60 to PianoSample(2000, floatArrayOf(0f, 0.25f, 0.5f, 0.75f))),
             listOf(PianoNote(60, 0, 30, 64)),
             1000,
+            wet = 0f,
         )
         val output = FloatArray(4)
         assertEquals(4, mixer.read(output))
         assertArrayEquals(floatArrayOf(0f, 0.5f * 64 / 127, 0f, 0f), output, 0.00001f)
+    }
+
+    @Test
+    fun reverbRingsAfterTheLastNoteThenDecays() {
+        val rate = 8000
+        val mixer = PianoScoreMixer(
+            mapOf(60 to PianoSample(rate, FloatArray(rate) { sin(2 * PI * 440 * it / rate).toFloat() })),
+            listOf(PianoNote(60, 0, 250, 127)),
+            rate,
+            tailMs = 1500,
+        )
+        assertEquals(250L * rate / 1000 + 1500L * rate / 1000, mixer.totalFrames)
+        val output = FloatArray(mixer.totalFrames.toInt())
+        assertEquals(output.size, mixer.read(output))
+        assertEquals(0, mixer.read(output))
+        val noteEnd = 250 * rate / 1000
+        fun peak(from: Int, to: Int) = output.slice(from until to).maxOf { abs(it) }
+        assertTrue(peak(noteEnd + 200, noteEnd + 2200) > 0.001f)
+        assertTrue(peak(output.size - 1000, output.size) < peak(noteEnd + 200, noteEnd + 2200))
+        assertTrue(output.all { abs(it) <= 1f })
     }
 }
