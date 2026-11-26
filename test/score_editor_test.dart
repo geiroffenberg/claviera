@@ -1,5 +1,6 @@
 import 'package:claviera/editor/score_editor.dart';
 import 'package:claviera/models/score.dart';
+import 'package:claviera/storage/projects.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const emptyScore = Score(
@@ -12,6 +13,80 @@ const c = Pitch(diatonicStep: 28, midiNote: 60);
 const d = Pitch(diatonicStep: 29, midiNote: 62);
 
 void main() {
+  test('rests use their voice staff without moving cross-staff notes', () {
+    final editor = ScoreEditor(
+      const Score(
+        title: 'Cross-staff',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              NotationEvent(
+                startTick: 960,
+                durationTicks: 960,
+                voice: Voice.v3,
+                staff: Staff.treble,
+                pitches: [c],
+              ),
+              NotationEvent(
+                startTick: 0,
+                durationTicks: 960,
+                voice: Voice.v4,
+                staff: Staff.treble,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final events = editor.score.measures.first.events;
+    final generated = events.singleWhere(
+      (event) => event.voice == Voice.v3 && event.isRest,
+    );
+    final note = events.singleWhere(
+      (event) => event.voice == Voice.v3 && !event.isRest,
+    );
+    final explicit = events.singleWhere((event) => event.voice == Voice.v4);
+    expect(generated.staff, Staff.bass);
+    expect(explicit.staff, Staff.bass);
+    expect(note.staff, Staff.treble);
+    expect(editor.eventById(explicit.eventId)!.staff, Staff.treble);
+
+    final saved = ProjectCodec.encode(
+      Project(name: 'Cross-staff', tempo: 120, editor: editor),
+    );
+    final reopened = ProjectCodec.decode(saved).editor;
+    expect(reopened.storedEventsFor(Voice.v4).single.staff, Staff.treble);
+    expect(
+      reopened.score.measures.first.events
+          .singleWhere((event) => event.voice == Voice.v4)
+          .staff,
+      Staff.bass,
+    );
+
+    editor.insertTuplet(
+      voice: Voice.v2,
+      staff: Staff.bass,
+      tuplet: const Tuplet.triplet(),
+      value: NoteValue.eighth,
+    );
+    expect(
+      editor.score.measures.first.events
+          .where((event) => event.voice == Voice.v2)
+          .map((event) => event.staff),
+      [Staff.treble, Staff.treble, Staff.treble],
+    );
+    editor.undo();
+    editor.redo();
+    expect(
+      editor.score.measures.first.events
+          .where((event) => event.voice == Voice.v2)
+          .every((event) => event.staff == Staff.treble),
+      isTrue,
+    );
+  });
+
   test('ornaments are mutually exclusive and remain on tied attacks', () {
     final editor = ScoreEditor(emptyScore);
     editor.insertBars(1, 1, initialTempo: 120);

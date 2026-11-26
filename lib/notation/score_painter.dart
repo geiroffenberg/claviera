@@ -176,6 +176,11 @@ class ScorePainter extends CustomPainter {
   static Staff staffAt(double y, double s) =>
       y < 16 * s ? Staff.treble : Staff.bass;
 
+  static double restY(Voice voice, double s) {
+    final top = restStaffForVoice(voice) == Staff.treble ? 8 : 20;
+    return (top + (stemPointsUp(voice) ? 1 : 3)) * s;
+  }
+
   static Pitch pitchAt(double y, Staff staff, double s) {
     final top = (staff == Staff.treble ? 8 : 20) * s;
     final bottom = staff == Staff.treble ? 30 : 18;
@@ -681,13 +686,15 @@ class ScorePainter extends CustomPainter {
   ) {
     final events = span.events;
     final up = stemPointsUp(events.first.voice);
-    final top = events.first.staff == Staff.treble ? _trebleTop : _bassTop;
     // Clear every stem tip (or the staff, for rests) in the group.
     final tips = [
       for (final event in events)
         beamed[event] ??
             (event.isRest
-                ? (up ? top : top + 4 * _s)
+                ? (restStaffForVoice(event.voice) == Staff.treble
+                          ? _trebleTop
+                          : _bassTop) +
+                      (up ? 0 : 4 * _s)
                 : up
                 ? event.pitches
                           .map((p) => _pitchY(p, event.staff))
@@ -802,6 +809,7 @@ class ScorePainter extends CustomPainter {
     final base = baseDuration(duration, tuplet: event.tuplet);
     final dots = notationForDuration(duration, tuplet: event.tuplet)?.dots ?? 0;
     if (event.isRest) {
+      final y = restY(event.voice, _s);
       final glyph = switch (base) {
         >= 3840 => '\uE4E3',
         >= 1920 => '\uE4E4',
@@ -811,18 +819,18 @@ class ScorePainter extends CustomPainter {
         >= 120 => '\uE4E8',
         _ => '\uE4E9',
       };
-      _glyph(canvas, glyph, x, top + 2 * _s, color: color);
+      _glyph(canvas, glyph, x, y, color: color);
       for (var i = 0; i < dots; i++) {
         _glyph(
           canvas,
           '\uE1E7',
           x + (1.6 + i * .6) * _s,
-          top + 2 * _s,
+          y,
           color: color,
         );
       }
       if (event.articulations.contains(Articulation.fermata)) {
-        _glyph(canvas, '\uE4C0', x, top - 1.5 * _s, color: color);
+        _glyph(canvas, '\uE4C0', x, y - 3.5 * _s, color: color);
       }
       return;
     }

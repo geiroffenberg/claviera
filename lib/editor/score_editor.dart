@@ -1956,7 +1956,7 @@ class ScoreEditor {
             startTick: position - measureStart(measure),
             durationTicks: part,
             voice: event.voice,
-            staff: event.staff,
+            staff: event.isRest ? restStaffForVoice(event.voice) : event.staff,
             pitches: event.pitches,
             eventId: event.id,
             tuplet: event.tuplet,

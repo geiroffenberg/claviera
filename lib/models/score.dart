@@ -7,6 +7,11 @@ typedef PlaybackSegment = ({int measure, int startTick, int eventId});
 
 enum Staff { treble, bass }
 
+Staff restStaffForVoice(Voice voice) => switch (voice) {
+  Voice.v1 || Voice.v2 => Staff.treble,
+  Voice.v3 || Voice.v4 => Staff.bass,
+};
+
 enum Accidental { none, sharp, flat, natural }
 
 enum Articulation {

@@ -12,6 +12,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
+  test('MusicXML assigns rests to the designated voice staff', () {
+    final editor = ScoreEditor(blankScore);
+    for (final voice in Voice.values) {
+      editor.append(
+        voice: voice,
+        staff: voice.index < 2 ? Staff.bass : Staff.treble,
+        duration: 960,
+      );
+    }
+    final xml = XmlDocument.parse(
+      utf8.decode(MusicXmlExport.encode(editor, 120, 'Rests')),
+    );
+    final rests = xml
+        .findAllElements('note')
+        .where((note) => note.getElement('rest') != null);
+    expect(
+      {
+        for (final rest in rests)
+          rest.getElement('voice')!.innerText:
+              rest.getElement('staff')!.innerText,
+      },
+      {'1': '1', '2': '1', '3': '2', '4': '2'},
+    );
+  });
+
   test('MusicXML marks the final barline including an end repeat', () {
     final editor = ScoreEditor(blankScore);
     editor.setMeasureRepeats(3, start: false, end: true);

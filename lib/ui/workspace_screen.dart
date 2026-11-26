@@ -1921,7 +1921,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       )) {
         final x = ScorePainter.eventXFor(score, m, event.startTick, 10);
         final ys = event.isRest
-            ? [(event.staff == Staff.treble ? 10 : 22) * 10.0]
+            ? [ScorePainter.restY(event.voice, 10)]
             : event.pitches.map(
                 (pitch) => ScorePainter.pitchY(pitch, event.staff, 10),
               );
@@ -2191,7 +2191,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
       } else {
         selectedId = editor.append(
           voice: voice,
-          staff: staff,
+          staff: rest ? restStaffForVoice(voice) : staff,
           duration: duration,
           pitch: rest ? null : writtenPitch,
           measure: selectedMeasure,

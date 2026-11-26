@@ -567,6 +567,50 @@ void main() {
     expect(find.text('Untitled score'), findsOneWidget);
   });
 
+  testWidgets('rest entry follows the voice and remains selectable', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    ScoreViewport viewport() =>
+        tester.widget<ScoreViewport>(find.byType(ScoreViewport));
+    final origin = tester.getTopLeft(
+      find.byKey(const ValueKey('score-canvas')),
+    );
+    await tester.tap(find.byTooltip('Note'));
+    await tester.pump();
+    for (final voice in Voice.values) {
+      await tester.tap(find.text('V${voice.index + 1}'));
+      await tester.pump();
+      final y = voice.index < 2 ? 215.0 : 115.0;
+      await tester.tapAt(origin + Offset(160, y));
+      await tester.pump();
+      final event = viewport().score.measures.first.events.singleWhere(
+        (event) => event.voice == voice,
+      );
+      expect(event.isRest, isTrue);
+      expect(event.staff, voice.index < 2 ? Staff.treble : Staff.bass);
+    }
+
+    await tester.tap(find.byTooltip('Write mode'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 258));
+    await tester.pump();
+    expect(viewport().selectedEvent?.voice, Voice.v4);
+    expect(viewport().selectedEvent?.isRest, isTrue);
+    await tester.tap(find.byTooltip('Edit mode'));
+    await tester.tap(find.byTooltip('Rest'));
+    await tester.pump();
+    await tester.tapAt(origin + const Offset(160, 115));
+    await tester.pump();
+    final replacement = viewport().score.measures.first.events.singleWhere(
+      (event) => event.voice == Voice.v4,
+    );
+    expect(replacement.isRest, isFalse);
+    expect(replacement.staff, Staff.treble);
+  });
+
   test('seconds offsets alternate in pitch order', () {
     const pitches = [
       Pitch(diatonicStep: 30, midiNote: 64),
@@ -741,7 +785,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Write mode'));
       await tester.pump();
-      await tester.tapAt(origin + const Offset(160, 100));
+      await tester.tapAt(origin + const Offset(160, 230));
       await tester.pump();
       await tester.tap(find.byTooltip('Edit mode'));
       await tester.pump();

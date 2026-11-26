@@ -27,6 +27,41 @@ NotationEvent event(
 );
 
 void main() {
+  testWidgets('rests are painted at separate positions for all four voices', (
+    tester,
+  ) async {
+    double restOffset(Voice voice) {
+      final score = Score(
+        title: '',
+        beatsPerMeasure: 4,
+        beatUnit: 4,
+        measures: [
+          Measure(
+            events: [
+              event(0, 960, voice: voice, staff: Staff.treble, rest: true),
+            ],
+          ),
+        ],
+      );
+      final canvas = TestRecordingCanvas();
+      ScorePainter(score: score, selectedEvent: null, selectedPitch: 0).paint(
+        canvas,
+        Size(ScorePainter.widthFor(score, 10), ScorePainter.heightFor(10)),
+      );
+      final glyph = canvas.invocations.singleWhere((call) {
+        final invocation = call.invocation;
+        return invocation.memberName == #drawParagraph &&
+            (invocation.positionalArguments[1] as Offset).dx == 160;
+      });
+      return (glyph.invocation.positionalArguments[1] as Offset).dy;
+    }
+
+    final offsets = Voice.values.map(restOffset).toList();
+    expect(offsets[1] - offsets[0], closeTo(20, .001));
+    expect(offsets[2] - offsets[0], closeTo(120, .001));
+    expect(offsets[3] - offsets[2], closeTo(20, .001));
+  });
+
   testWidgets('a chord ornament is painted once', (tester) async {
     int paragraphs(Set<Articulation> marks) {
       final score = Score(

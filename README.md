@@ -66,6 +66,10 @@ extracted or shared; it is not strong protection against payment bypass.
   crossing a barline may consume generated rests in the next bar.
   Dragging between the treble and bass staves switches the note to that staff;
   chord stack keeps the selected chord's staff.
+- Rests for voices 1 and 2 appear on the treble staff, and rests for voices 3
+  and 4 on the bass staff, regardless of where you tap. Voices 1 and 3 sit
+  above the staff center; voices 2 and 4 sit below it. Notes can still be
+  entered on either staff.
 - In Write mode, select sharp, flat or natural to apply it to each entered
   pitch. Tap the selected accidental again to turn it off, or choose another.
   With none selected, normal key-signature and in-bar accidental rules apply.
