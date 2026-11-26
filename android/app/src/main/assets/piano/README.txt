@@ -10,5 +10,7 @@ encoded as described in the source repository's README and LICENSE.
 For Claviera the samples were truncated to three seconds, faded out over the
 last 0.2 seconds and re-encoded as mono AAC. The 116 and 127 samples were
 derived by speeding up the 104 sample, first by an octave and then by
-approximately 11 semitones, respectively. Playback shifts the nearest root.
+approximately 11 semitones, respectively. Each root was then gain-adjusted so
+its first second measures about -28 LUFS (EBU R128), keeping peaks below
+-3 dBFS, and re-encoded at 96 kbit/s. Playback shifts the nearest root.
 The reduced set is intended only as a lightweight prototype.
