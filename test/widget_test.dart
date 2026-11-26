@@ -3,6 +3,7 @@ import 'package:claviera/models/score.dart';
 import 'package:claviera/notation/beaming.dart';
 import 'package:claviera/notation/score_painter.dart';
 import 'package:claviera/notation/score_viewport.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,7 @@ void main() {
   });
 
   testWidgets('app icon opens About and licenses in landscape', (tester) async {
+    registerAssetLicenses();
     await tester.binding.setSurfaceSize(const Size(568, 320));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const ClavieraApp());
@@ -43,6 +45,21 @@ void main() {
     await tester.tap(find.text('View licenses'));
     await tester.pumpAndSettle();
     expect(find.byType(LicensePage), findsOneWidget);
+    final future = LicenseRegistry.licenses.toList();
+    await tester.pumpAndSettle();
+    final licenses = await future;
+    for (final (name, text) in [
+      ('Bravura music font', 'SIL OPEN FONT LICENSE'),
+      ('Piano samples', 'CC0 1.0 Universal'),
+    ]) {
+      final entry = licenses.singleWhere(
+        (entry) => entry.packages.contains(name),
+      );
+      expect(
+        entry.paragraphs.map((paragraph) => paragraph.text).join(' '),
+        contains(text),
+      );
+    }
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('Close'));
@@ -190,6 +207,20 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('User manual'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(
+      tester.getTopLeft(find.text('User manual')).dy,
+      greaterThan(tester.getTopLeft(find.text('Export MusicXML')).dy),
+    );
+    await tester.ensureVisible(find.text('User manual'));
+    await tester.pump();
     await tester.tap(find.text('User manual'));
     await tester.pumpAndSettle();
     final dialog = find.byType(AlertDialog);

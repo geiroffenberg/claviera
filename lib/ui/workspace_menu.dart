@@ -76,14 +76,6 @@ void showWorkspaceMenu(
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.menu_book_outlined),
-            title: const Text('User manual'),
-            onTap: () {
-              Navigator.pop(sheetContext);
-              showUserManual(context);
-            },
-          ),
-          ListTile(
             leading: const Icon(Icons.redo),
             title: const Text('Redo'),
             enabled: canRedo,
@@ -121,6 +113,14 @@ void showWorkspaceMenu(
                 item.$3();
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.menu_book_outlined),
+            title: const Text('User manual'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              showUserManual(context);
+            },
+          ),
         ],
       ),
     ),

@@ -36,7 +36,8 @@ extracted or shared; it is not strong protection against payment bypass.
   composition. It is installed as an editable project on first launch.
 - Open **Menu > Getting started** for a short guide to the basic controls.
 - Open **Menu > User manual** for an offline guide to the controls and icons.
-- Tap the Claviera icon in the top bar for app information and licenses.
+- Tap the Claviera icon in the top bar for app information and licenses,
+  including the Bravura font license and piano sample notice.
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls
   don't fit on screen. Values run from whole through 64th. Tap **Dot** to

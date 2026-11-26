@@ -64,6 +64,8 @@ flutter:
   assets:
     - assets/demo/Dream.claviera
     - assets/icons/claviera_icon.png
+    - assets/fonts/LICENSE-Bravura.txt
+    - android/app/src/main/assets/piano/README.txt
 
   fonts:
     - family: Bravura
