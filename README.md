@@ -35,6 +35,7 @@ extracted or shared; it is not strong protection against payment bypass.
 - On Android, open **Menu > Open project > Dream** to load the included demo
   composition. It is installed as an editable project on first launch.
 - Open **Menu > Getting started** for a short guide to the basic controls.
+- Tap the Claviera icon in the top bar for app information and licenses.
 - The top two controls on the left rail toggle Write/Edit and Note/Rest.
   Select a voice and duration on the rails. Scroll a rail if its controls
   don't fit on screen. Values run from whole through 64th. Tap **Dot** to

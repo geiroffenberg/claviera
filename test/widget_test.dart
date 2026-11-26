@@ -8,6 +8,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('top menu shows the app icon in landscape', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final size in [const Size(568, 320), const Size(1000, 700)]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpWidget(const ClavieraApp());
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is AssetImage &&
+              (widget.image as AssetImage).assetName ==
+                  'assets/icons/claviera_icon.png',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('CLAVIERA'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('app icon opens About and licenses in landscape', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(568, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const ClavieraApp());
+    await tester.tap(find.byTooltip('About Claviera'));
+    await tester.pumpAndSettle();
+    expect(find.text('Claviera'), findsOneWidget);
+    expect(
+      find.text('A piano score sketchpad for writing and playing music.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('View licenses'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LicensePage), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AboutDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('bar menu adds, copies and inserts bars', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));

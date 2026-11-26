@@ -897,6 +897,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
     }
   }
 
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'Claviera',
+      applicationIcon: Image.asset(
+        'assets/icons/claviera_icon.png',
+        width: 48,
+        height: 48,
+        excludeFromSemantics: true,
+      ),
+      children: const [
+        SizedBox(height: 16),
+        Text('A piano score sketchpad for writing and playing music.'),
+      ],
+    );
+  }
+
   Future<void> _setTempo() async {
     var input = '$tempo';
     final value = await showDialog<int>(
@@ -2571,16 +2588,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen>
                                       : null;
                                   return Row(
                                     children: [
-                                      if (constraints.maxWidth >= 650) ...[
-                                        const Text(
-                                          'CLAVIERA',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 1.4,
+                                      Tooltip(
+                                        message: 'About Claviera',
+                                        child: InkWell(
+                                          onTap: _showAbout,
+                                          child: Image.asset(
+                                            'assets/icons/claviera_icon.png',
+                                            width: 28,
+                                            height: 28,
+                                            excludeFromSemantics: true,
                                           ),
                                         ),
-                                        const SizedBox(width: 14),
-                                      ],
+                                      ),
+                                      const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
                                           projectName,
